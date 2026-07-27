@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import { 
-  type HarmonicState, 
+import {
+  type HarmonicState,
   createDefaultHarmonicState,
+  createHarmonicOscillators,
   updateHarmonics,
   startPlayback,
   stopAllOscillators,
@@ -41,74 +42,79 @@ const OVERTONE_PRESETS: Record<string, number[]> = {
 
 export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
   ...createDefaultHarmonicState(),
-  
+
   setFundamental: (freq: number) => {
     set({ fundamental: freq });
-    updateHarmonics(get());
+    if (get().isPlaying) updateHarmonics(get());
   },
-  
+
   setOvertoneGain: (index: number, gain: number) => {
     const newGains = [...get().overtoneGains];
     newGains[index] = gain;
     set({ overtoneGains: newGains });
-    updateHarmonics(get());
+    if (get().isPlaying) updateHarmonics(get());
   },
-  
+
   setWaveform: (wave: OscillatorType) => {
+    // Waveform can't change on running oscillators — recreate them
     set({ waveform: wave });
-    updateHarmonics(get());
+    if (get().isPlaying) {
+      createHarmonicOscillators(get());
+      startPlayback();
+    }
   },
-  
+
   setDetune: (cents: number) => {
     set({ detune: cents });
-    updateHarmonics(get());
+    if (get().isPlaying) updateHarmonics(get());
   },
-  
+
   setFilter: (freq: number, q: number) => {
     set({ filterFreq: freq, filterQ: q });
-    updateHarmonics(get());
+    if (get().isPlaying) updateHarmonics(get());
   },
-  
+
   setMasterGain: (gain: number) => {
     set({ masterGain: gain });
-    updateHarmonics(get());
+    if (get().isPlaying) updateHarmonics(get());
   },
-  
+
   togglePlayback: () => {
-    const { isPlaying } = get();
-    if (!isPlaying) {
-      set({ isPlaying: true });
+    const state = get();
+    if (!state.isPlaying) {
+      createHarmonicOscillators(state);
       startPlayback();
+      set({ isPlaying: true });
     } else {
       stopAllOscillators();
       set({ isPlaying: false });
     }
   },
-  
+
   trigger: (note: string) => {
     const freq = NOTE_FREQUENCIES[note];
     if (freq) {
-      triggerNote(freq, 0.5);
+      triggerNote(freq, 0.5, get().waveform);
     }
   },
-  
+
   randomizeOvertones: () => {
     const newGains = Array.from({ length: 16 }, () => Math.random());
     set({ overtoneGains: newGains });
-    updateHarmonics(get());
+    if (get().isPlaying) updateHarmonics(get());
   },
-  
+
   resetOvertones: () => {
     const defaultState = createDefaultHarmonicState();
     set({ overtoneGains: defaultState.overtoneGains });
-    updateHarmonics(get());
+    if (get().isPlaying) updateHarmonics(get());
   },
-  
+
   setPreset: (preset: string) => {
     const gains = OVERTONE_PRESETS[preset];
     if (gains) {
       set({ overtoneGains: gains });
-      updateHarmonics(get());
+      if (get().isPlaying) updateHarmonics(get());
     }
   },
 }));

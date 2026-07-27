@@ -28,11 +28,11 @@ export function getAudioContext(): AudioContext {
     audioCtx = new AudioContext();
     masterGainNode = audioCtx.createGain();
     filterNode = audioCtx.createBiquadFilter();
-    
+
     filterNode.type = 'lowpass';
     filterNode.frequency.value = 2000;
     filterNode.Q.value = 1;
-    
+
     masterGainNode.gain.value = 0.3;
     filterNode.connect(masterGainNode);
     masterGainNode.connect(audioCtx.destination);
@@ -40,57 +40,34 @@ export function getAudioContext(): AudioContext {
   return audioCtx;
 }
 
+/** Create 16 harmonic oscillators wired into the filter chain. Does NOT start them. */
 export function createHarmonicOscillators(state: HarmonicState): void {
   stopAllOscillators();
-  
+
   const ctx = getAudioContext();
-  
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
+
   for (let i = 0; i < MAX_HARMONICS; i++) {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    
+
     osc.type = state.waveform;
     osc.frequency.value = state.fundamental * (i + 1);
     osc.detune.value = state.detune;
-    
+
     gain.gain.value = state.overtoneGains[i] || 0;
-    
+
     osc.connect(gain);
     gain.connect(filterNode!);
-    
-    if (state.isPlaying) {
-      osc.start();
-    }
-    
+
     oscillators.push(osc);
     gainNodes.push(gain);
   }
 }
 
-export function updateHarmonics(state: HarmonicState): void {
-  oscillators.forEach((osc, i) => {
-    if (osc) {
-      osc.frequency.value = state.fundamental * (i + 1);
-      osc.detune.value = state.detune;
-    }
-  });
-  
-  gainNodes.forEach((gain, i) => {
-    if (gain) {
-      gain.gain.value = state.overtoneGains[i] || 0;
-    }
-  });
-  
-  if (filterNode) {
-    filterNode.frequency.value = state.filterFreq;
-    filterNode.Q.value = state.filterQ;
-  }
-  
-  if (masterGainNode) {
-    masterGainNode.gain.value = state.masterGain;
-  }
-}
-
+/** Start all created oscillators. */
 export function startPlayback(): void {
   const ctx = getAudioContext();
   if (ctx.state === 'suspended') {
@@ -101,6 +78,32 @@ export function startPlayback(): void {
   });
 }
 
+/** Update running oscillators with new parameters (no recreation needed). */
+export function updateHarmonics(state: HarmonicState): void {
+  oscillators.forEach((osc, i) => {
+    if (osc) {
+      osc.frequency.value = state.fundamental * (i + 1);
+      osc.detune.value = state.detune;
+    }
+  });
+
+  gainNodes.forEach((gain, i) => {
+    if (gain) {
+      gain.gain.value = state.overtoneGains[i] || 0;
+    }
+  });
+
+  if (filterNode) {
+    filterNode.frequency.value = state.filterFreq;
+    filterNode.Q.value = state.filterQ;
+  }
+
+  if (masterGainNode) {
+    masterGainNode.gain.value = state.masterGain;
+  }
+}
+
+/** Stop and disconnect all oscillators. */
 export function stopAllOscillators(): void {
   oscillators.forEach(osc => {
     try { osc.stop(); } catch {}
@@ -113,20 +116,24 @@ export function stopAllOscillators(): void {
   gainNodes = [];
 }
 
-export function triggerNote(frequency: number, duration: number = 0.5): void {
+/** Trigger a one-shot note with the current waveform. */
+export function triggerNote(frequency: number, duration: number = 0.5, waveform: OscillatorType = 'sine'): void {
   const ctx = getAudioContext();
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
-  
+
   osc.frequency.value = frequency;
-  osc.type = 'sine';
-  
+  osc.type = waveform;
+
   gain.gain.setValueAtTime(0.5, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
-  
+
   osc.connect(gain);
   gain.connect(filterNode!);
-  
+
   osc.start();
   osc.stop(ctx.currentTime + duration);
 }
