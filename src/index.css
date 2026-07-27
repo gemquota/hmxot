@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  --hmxot-bg: #0a0a0f;
+  --hmxot-primary: #7c3aed;
+  --hmxot-secondary: #06b6d4;
+  --hmxot-accent: #f43f5e;
+  --hmxot-glow: #a855f7;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--hmxot-bg);
+  color: white;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.5; filter: blur(20px); }
+  50% { opacity: 1; filter: blur(30px); }
+}
+
+@keyframes rotate-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+.glow-text {
+  text-shadow: 0 0 10px var(--hmxot-glow), 0 0 20px var(--hmxot-glow), 0 0 40px var(--hmxot-glow);
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
