@@ -31,11 +31,14 @@ function Section({ title, children, defaultOpen = true }: { title: string; child
         hover:bg-white/[0.02] active:bg-white/[0.04] transition-colors select-none">
         {title}
       </summary>
-      <div className="px-4 pb-3">
-        {children}
-      </div>
+      <div className="px-4 pb-3">{children}</div>
     </details>
   );
+}
+
+
+function noteToLabel(n: string): string {
+  return n;
 }
 
 export function OvertoneControls() {
@@ -43,7 +46,7 @@ export function OvertoneControls() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-black/80 backdrop-blur-xl">
-      {/* Header with transport controls */}
+      {/* Header */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06] shrink-0">
         <button onClick={store.togglePlayback}
           className={`px-5 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 ${
@@ -52,6 +55,15 @@ export function OvertoneControls() {
               : 'bg-purple-600 shadow-lg shadow-purple-500/40'
           }`}>
           {store.isPlaying ? '■' : '▶'}
+        </button>
+
+        <button onClick={store.toggleSequencer}
+          className={`px-4 py-2 rounded-xl font-bold text-[9px] transition-all active:scale-95 ${
+            store.isSequencing
+              ? 'bg-emerald-600 shadow-lg shadow-emerald-500/40'
+              : 'bg-white/10 active:bg-white/20'
+          }`}>
+          {store.isSequencing ? '⏹ SEQ' : '🔀 SEQ'}
         </button>
 
         <div className="flex-1" />
@@ -69,6 +81,60 @@ export function OvertoneControls() {
 
       {/* Scrollable controls */}
       <div className="flex-1 overflow-y-auto">
+
+        {/* ═══ SEQUENCER SECTION ═══ */}
+        <Section title="Sequencer">
+          {/* Pattern selector */}
+          <div className="flex gap-1 mb-2">
+            {store.patterns.map((p, i) => (
+              <button key={p.name} onClick={() => store.selectPattern(i)}
+                className={`flex-1 py-1.5 rounded-lg text-[8px] font-medium transition-all active:scale-95 capitalize ${
+                  store.selectedPatternIdx === i
+                    ? 'bg-emerald-600/60 text-white'
+                    : 'bg-white/5 active:bg-white/20'
+                }`}>{p.name}</button>
+            ))}
+            <button onClick={store.randomizeSteps}
+              className="px-2 py-1.5 rounded-lg bg-cyan-500/20 active:bg-cyan-500/40 text-[8px] font-medium active:scale-95">
+              🎲
+            </button>
+          </div>
+
+          {/* BPM */}
+          <Slider label="BPM" value={store.bpm} min={40} max={200} step={1}
+            onChange={store.setBpm} format={(v) => `${v.toFixed(0)}`} />
+
+          {/* Step grid */}
+          <div className="text-[8px] text-white/30 mb-1 font-mono">
+            Current step: <span className="text-emerald-400">{store.currentStep}</span> / {store.steps.length - 1}
+          </div>
+          <div className="grid gap-[2px]" style={{ gridTemplateColumns: `repeat(${Math.min(store.steps.length, 16)}, 1fr)` }}>
+            {store.steps.map((step, i) => {
+              const isCurrent = i === store.currentStep;
+              const hasNote = step.note !== null;
+              const hasPerc = step.perc;
+              return (
+                <button key={i} onClick={() => store.setStepActive(i, !step.active)}
+                  className={`aspect-square rounded-md text-[6px] font-mono flex flex-col items-center justify-center
+                    transition-all active:scale-90 ${
+                    isCurrent
+                      ? 'ring-1 ring-emerald-400 ring-offset-1 ring-offset-black/50'
+                      : ''
+                  } ${
+                    step.active
+                      ? hasNote
+                        ? hasPerc ? 'bg-amber-600/60' : 'bg-emerald-700/60'
+                        : hasPerc ? 'bg-amber-800/40' : 'bg-white/8'
+                      : 'bg-white/[0.03] opacity-40'
+                  }`}>
+                  <span>{step.active ? (hasNote ? noteToLabel(step.note!) : hasPerc ? '👆' : '·') : '·'}</span>
+                </button>
+              );
+            })}
+          </div>
+        </Section>
+
+        {/* ═══ TIMBRE ═══ */}
         <Section title="Timbre / Overtone Presets">
           <div className="grid grid-cols-4 gap-1 mb-2">
             {PRESETS.slice(0, 8).map(p => (
@@ -92,16 +158,10 @@ export function OvertoneControls() {
           </div>
           <div className="flex gap-2 mt-1.5">
             <button onClick={store.randomizeOvertones}
-              className="flex-1 py-1.5 rounded-xl bg-cyan-500/20 active:bg-cyan-500/40 text-[8px] font-medium active:scale-95">
-              🎲 Randomize
-            </button>
+              className="flex-1 py-1.5 rounded-xl bg-cyan-500/20 active:bg-cyan-500/40 text-[8px] font-medium active:scale-95">🎲 Randomize</button>
             <button onClick={store.resetOvertones}
-              className="flex-1 py-1.5 rounded-xl bg-rose-500/20 active:bg-rose-500/40 text-[8px] font-medium active:scale-95">
-              ↺ Reset
-            </button>
+              className="flex-1 py-1.5 rounded-xl bg-rose-500/20 active:bg-rose-500/40 text-[8px] font-medium active:scale-95">↺ Reset</button>
           </div>
-
-          {/* Individual harmonic sliders */}
           <div className="mt-2">
             <div className="text-[8px] text-white/30 mb-1 font-mono">Individual Harmonics</div>
             <div className="grid grid-cols-8 gap-1">
@@ -118,6 +178,7 @@ export function OvertoneControls() {
           </div>
         </Section>
 
+        {/* ═══ WAVEFORM & FILTER ═══ */}
         <Section title="Waveform & Filter">
           <div className="text-[8px] text-white/30 mb-1">Waveform</div>
           <div className="grid grid-cols-5 gap-1 mb-2">
@@ -128,7 +189,6 @@ export function OvertoneControls() {
                 }`}>{w}</button>
             ))}
           </div>
-
           <Slider label="Fundamental" value={store.fundamental} min={30} max={2000} step={1}
             onChange={store.setFundamental} format={(v) => `${v.toFixed(0)} Hz`} />
           <Slider label="Detune" value={store.detune} min={-100} max={100} step={1}
@@ -137,7 +197,6 @@ export function OvertoneControls() {
             onChange={(v) => store.setFilter(v, store.filterQ)} format={(v) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v.toFixed(0)} />
           <Slider label="Filter Resonance" value={store.filterQ} min={0.1} max={20} step={0.1}
             onChange={(v) => store.setFilter(store.filterFreq, v)} format={(v) => `Q ${v.toFixed(1)}`} />
-
           <div className="grid grid-cols-4 gap-1 mt-1">
             {FILTER_TYPES.slice(0, 4).map(ft => (
               <button key={ft} onClick={() => store.setFilterType(ft)}
@@ -156,6 +215,7 @@ export function OvertoneControls() {
           </div>
         </Section>
 
+        {/* ═══ FX ═══ */}
         <Section title="FX — Reverb / Delay">
           <Slider label="Reverb Mix" value={store.reverbMix} min={0} max={1} step={0.01}
             onChange={store.setReverbMix} format={(v) => `${(v * 100).toFixed(0)}%`} />
@@ -183,27 +243,24 @@ export function OvertoneControls() {
             onChange={store.setPan} format={(v) => v === 0 ? 'C' : v < 0 ? `L${Math.abs(v).toFixed(1)}` : `R${v.toFixed(1)}`} />
         </Section>
 
+        {/* ═══ VOLUME ═══ */}
         <Section title="Volume">
           <Slider label="Master" value={store.masterGain} min={0} max={1} step={0.01}
             onChange={store.setMasterGain} format={(v) => `${(v * 100).toFixed(0)}%`} />
         </Section>
 
+        {/* ═══ NOTE TRIGGERS ═══ */}
         <Section title="Note Triggers">
-          <div className="text-[8px] text-white/30 mb-1">Quick notes</div>
           <div className="grid grid-cols-7 gap-1">
             {['C4','D4','E4','F4','G4','A4','B4'].map(n => (
               <button key={n} onClick={() => store.trigger(n)}
-                className="py-2.5 rounded-xl bg-white/5 active:bg-purple-500/40 text-[9px] font-medium active:scale-95">
-                {n}
-              </button>
+                className="py-2.5 rounded-xl bg-white/5 active:bg-purple-500/40 text-[9px] font-medium active:scale-95">{n}</button>
             ))}
           </div>
           <div className="grid grid-cols-7 gap-1 mt-1">
             {['C3','D3','E3','F3','G3','A3','B3'].map(n => (
               <button key={n} onClick={() => store.trigger(n)}
-                className="py-2 rounded-xl bg-white/5 active:bg-purple-500/40 text-[8px] font-medium active:scale-95">
-                {n}
-              </button>
+                className="py-2 rounded-xl bg-white/5 active:bg-purple-500/40 text-[8px] font-medium active:scale-95">{n}</button>
             ))}
           </div>
           <button onClick={() => store.triggerPerc()}
@@ -212,13 +269,14 @@ export function OvertoneControls() {
           </button>
         </Section>
 
+        {/* ═══ ABOUT ═══ */}
         <Section title="About HMXOT">
           <div className="text-[8px] text-white/30 leading-relaxed">
-            <p>Touch the canvas to play notes. Vertical position = velocity, horizontal = pitch.</p>
+            <p>Touch canvas to play notes. Vertical=velocity, horizontal=pitch.</p>
             <p className="mt-1">1-finger drag: ↔ detune, ↕ filter cutoff.</p>
             <p className="mt-1">2-finger drag: ↔ delay time, ↕ reverb mix.</p>
-            <p className="mt-1">Double-tap: toggle this panel.</p>
-            <p className="mt-1 text-purple-400">Harmonic Overtones eXperiential Tool</p>
+            <p className="mt-1">Double-tap: toggle panel.</p>
+            <p className="mt-1 text-purple-400">HMXOT — Harmonic Overtones eXperiential Tool</p>
           </div>
         </Section>
       </div>
