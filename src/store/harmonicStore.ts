@@ -78,29 +78,76 @@ function HK(harmonic: number, vel = 0.7): SeqStep { return makeStep(null, harmon
 // ═══════════════════════════════════════════
 function generate1564Pattern(fundamental: number): Pattern {
   const steps: SeqStep[] = [];
+  const bpm = 128;
 
-  // I-VI-V-IV for each harmonic H1-H8
-  // I = tonic, VI = major 6th, V = perfect 5th, IV = perfect 4th
-  // Frequencies are equal temperament — drone is silenced during sequencing
-  for (let hi = 1; hi <= 8; hi++) {
-    const tonic = fundamental * hi;
-    // Scale degrees above tonic in equal temperament
-    const vi = tonic * Math.pow(2, 9 / 12);  // major 6th
-    const v  = tonic * Math.pow(2, 7 / 12);  // perfect 5th
-    const iv = tonic * Math.pow(2, 5 / 12);  // perfect 4th
+  // Octave-compress to stay in 150-900Hz range
+  const oc = (freq: number) => {
+    while (freq < 150) freq *= 2;
+    while (freq > 900) freq /= 2;
+    return freq;
+  };
 
-    // I — tonic (with kick on strong beats)
-    steps.push(makeStep(null, hi, tonic, hi === 1 || hi === 5, 0.95));
-    // VI — submediant
-    steps.push(makeStep(null, null, vi, false, 0.65));
-    // V — dominant
-    steps.push(makeStep(null, null, v, false, 0.70));
-    // IV — subdominant (with kick on even phrases)
-    steps.push(makeStep(null, null, iv, hi % 2 === 0, 0.60));
+  // Scale degree helper: frequency = tonic * 2^(semitones/12)
+  const deg = (tonic: number, semitones: number) => oc(tonic * Math.pow(2, semitones / 12));
+
+  // For each harmonic H1-H8, compute I-VI-V-IV frequencies
+  // But vary the rhythm and pattern per harmonic for musical phrasing
+  const phrasePatterns = [
+    // H1: solid groove — quarter notes with rests
+    { rhythm: [1, 0, 0, 1, 0, 1, 0, 0], degs: [0, 0, 0, 9, 0, 7, 0, 0] },
+    // H2: syncopated — offbeat entries
+    { rhythm: [1, 0, 1, 0, 0, 0, 1, 0], degs: [0, 0, 9, 0, 0, 0, 7, 0] },
+    // H3: rising — four notes ascending
+    { rhythm: [1, 1, 1, 1, 0, 0, 0, 1], degs: [0, 9, 7, 5, 0, 0, 0, 0] },
+    // H4: call and response
+    { rhythm: [1, 0, 0, 0, 1, 1, 0, 0], degs: [0, 0, 0, 0, 9, 7, 0, 0] },
+    // H5: triplet feel variation
+    { rhythm: [1, 0, 1, 0, 1, 0, 0, 0], degs: [0, 0, 7, 0, 5, 0, 0, 0] },
+    // H6: sparse
+    { rhythm: [1, 0, 0, 1, 0, 0, 1, 0], degs: [0, 0, 0, 9, 0, 0, 7, 0] },
+    // H7: falling
+    { rhythm: [1, 1, 0, 0, 1, 0, 0, 0], degs: [0, 5, 0, 0, 9, 0, 0, 0] },
+    // H8: full resolution
+    { rhythm: [1, 1, 1, 1, 1, 1, 1, 1], degs: [0, 5, 9, 9, 7, 5, 0, 9] },
+  ];
+
+  for (let hi = 0; hi < 8; hi++) {
+    const h = hi + 1;
+    const tonic = fundamental * h;
+    const phrase = phrasePatterns[hi]!;
+
+    // 8 steps per harmonic (2 bars at 16th notes)
+    for (let beat = 0; beat < 8; beat++) {
+      const shouldPlay = phrase.rhythm[beat] === 1;
+      const semitones = phrase.degs[beat] ?? 0;
+
+      // Determine which scale degree this is
+      let isKick = false;
+      if (beat === 0) isKick = true;
+      else if (beat === 4 && hi % 2 === 0) isKick = true;
+      else if (beat === 2 && hi >= 4) isKick = true;
+      
+      // Snare/clap on every 4th beat (positions 3, 7)
+      const isSnare = beat === 3 || beat === 7;
+
+      if (shouldPlay && semitones > 0) {
+        const freq = deg(tonic, semitones);
+        steps.push(makeStep(null, null, freq, isKick || isSnare, 0.65 + (beat === 0 ? 0.3 : 0)));
+      } else if (shouldPlay && semitones === 0) {
+        // I (tonic) — use harmonic for rich tone
+        const freq = oc(tonic);
+        steps.push(makeStep(null, h, freq, isKick || isSnare, 0.85 + (beat === 0 ? 0.15 : 0)));
+      } else {
+        // Rest or just percussion
+        if (isKick) steps.push(K(0.6));
+        else if (isSnare) steps.push(makeStep(null, null, null, true, 0.5));
+        else steps.push(R());
+      }
+    }
   }
 
   return {
-    name: '1564', bpm: 120, arpeggio: false,
+    name: '1564', bpm, arpeggio: false,
     generative: '1564',
     steps,
   };
@@ -260,14 +307,14 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => {
     noteGates: Array(16).fill(true),
 
     // Sequencer — start with 1564
-    bpm: 120,
+    bpm: 128,
     currentStep: 0,
     isSequencing: false,
     selectedPatternIdx: _1564Idx,
     steps: [...initialPatterns[_1564Idx]!.steps],
     patterns: initialPatterns,
     seqTimer: null,
-    arpeggio: true,
+    arpeggio: false,
     generativeType: '1564',
     seqDroneReduced: false,
 
@@ -383,7 +430,7 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => {
         selectedPatternIdx: s.patterns.length,
         steps: [...pat.steps],
         bpm: pat.bpm,
-        arpeggio: true,
+        arpeggio: pat.arpeggio,
         generativeType: '1564',
         currentStep: 0,
       }));
