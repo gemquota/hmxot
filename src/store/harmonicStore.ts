@@ -1,353 +1,298 @@
 import { create } from 'zustand';
 import {
-  type HarmonicState,
-  type WaveType,
-  createDefaultHarmonicState,
-  createHarmonicOscillators,
-  applyParams,
-  startPlayback,
-  stopAllOscillators,
-  triggerNote,
-  triggerNoise,
+  type VoiceConfig,
+  defaultVoices,
+  createVoice,
+  destroyAllVoices,
+  updateVoice,
+  setVoiceHarmonicGains,
+  triggerNoiseToVoice,
+  setMasterGain,
+  setReverbMix,
+  setDelayParams,
   OVERTONE_PRESETS,
+  getAudioContext,
 } from '../audio/harmonicEngine';
 
-interface TouchState {
-  x: number;
-  y: number;
-  active: boolean;
-  force: number;
-  count: number;
-}
-
-export interface SeqStep {
-  // Which harmonic to emphasize (1-16). null = don't change gains.
-  activeHarmonic: number | null;
-  // How many neighbor harmonics to boost (0 = single, 1 = triad, etc.)
-  width: number;
-  perc: boolean;
+export interface SequencerStep {
+  harmonic: number | null; // which harmonic to emphasize (1-8), null = no change
+  perc: boolean;           // trigger percussion
   vel: number;
   active: boolean;
 }
 
-export interface Pattern {
-  name: string;
-  steps: SeqStep[];
-  bpm: number;
+export interface Track {
+  voiceId: string;
+  steps: SequencerStep[];
+  mute: boolean;
+  solo: boolean;
+  color: string;
 }
 
-// ─── Helpers ───
-function S(harmonic: number | null, width = 0, perc = false, vel = 0.7, active = true): SeqStep {
-  return { activeHarmonic: harmonic, width, perc, vel, active };
-}
-function R(): SeqStep { return S(null, 0, false, 0); }
-function K(vel = 0.7): SeqStep { return S(null, 0, true, vel); }
-function HK(h: number, width = 0, vel = 0.7): SeqStep { return S(h, width, true, vel); }
-
-// ════════════════════════════════════════════════
-// Build a harmonic progression — morphs drone timbre
-// Each step emphasizes a harmonic, creating evolving sound
-// ════════════════════════════════════════════════
-function generate1564Pattern(): Pattern {
-  const steps: SeqStep[] = [];
-  const bpm = 110;
-
-  // Harmonic progression: walk through the series
-  // with rhythmic variation and percussion
-  const progression = [
-    // Section 1: Establish (H1-H2 region)
-    [1, 0, 2, 0, 1, 3, 2, 1],
-    // Section 2: Rising (H2-H4)
-    [2, 3, 2, 4, 3, 2, 4, 3],
-    // Section 3: Expanding (H3-H6)
-    [3, 5, 4, 6, 3, 5, 4, 6],
-    // Section 4: Peak (H5-H8)
-    [5, 7, 6, 8, 5, 8, 7, 6],
-    // Section 5: Step down (H8-H5)
-    [8, 6, 7, 5, 6, 4, 5, 3],
-    // Section 6: Fall (H5-H3)
-    [5, 3, 4, 2, 3, 1, 4, 2],
-    // Section 7: Building again
-    [2, 4, 3, 5, 6, 5, 4, 6],
-    // Section 8: Resolution
-    [5, 3, 4, 2, 3, 1, 2, 3],
-  ];
-
-  let beat = 0;
-  for (const section of progression) {
-    for (const h of section) {
-      const isKick = beat % 4 === 0;
-      const isSnare = beat % 8 === 4;
-      const isFill = h === 0;
-
-      if (isFill) {
-        if (isKick) steps.push(K(0.7));
-        else if (isSnare) steps.push(S(null, 0, true, 0.5));
-        else steps.push(R());
-      } else {
-        // Width: 0 for single, 1 for wider
-        const w = h >= 5 ? 1 : 0;
-        const vel = isKick ? 0.9 : isSnare ? 0.6 : 0.5;
-        steps.push(HK(h, w, vel));
-      }
-      beat++;
-    }
-  }
-
-  return { name: '1564', bpm, steps };
-}
-
-// ─── Static patterns ───
-
-function buildPatterns(): Pattern[] {
-  return [generate1564Pattern()];
-}
-
-interface HarmonicStore extends HarmonicState {
-  touch: TouchState;
-  drawerOpen: boolean;
-  selectedPreset: string;
-  noteGates: boolean[];
+interface HarmonicStore {
+  // Engine
+  voices: VoiceConfig[];
+  masterGain: number;
+  reverbMix: number;
+  delayTime: number;
+  delayFeedback: number;
+  isPlaying: boolean;
 
   // Sequencer
   bpm: number;
   currentStep: number;
   isSequencing: boolean;
-  selectedPatternIdx: number;
-  steps: SeqStep[];
-  patterns: Pattern[];
+  tracks: Track[];
   seqTimer: ReturnType<typeof setInterval> | null;
+  selectedTrackIdx: number;
 
-  setFundamental: (freq: number) => void;
-  setOvertoneGain: (index: number, gain: number) => void;
-  setWaveform: (wave: WaveType) => void;
-  setDetune: (cents: number) => void;
-  setFilter: (freq: number, q: number) => void;
-  setFilterType: (t: BiquadFilterType) => void;
-  setMasterGain: (gain: number) => void;
+  // UI
+  drawerOpen: boolean;
+  showMixer: boolean;
+  editTrackIdx: number | null;
+
+  // Actions
+  init: () => void;
   togglePlayback: () => void;
-  trigger: (note: string) => void;
-  triggerFreq: (freq: number, vel?: number) => void;
-  triggerPerc: (vel?: number) => void;
-  randomizeOvertones: () => void;
-  resetOvertones: () => void;
-  setPreset: (preset: string) => void;
-  setReverbMix: (mix: number) => void;
-  setDelayTime: (time: number) => void;
-  setDelayFeedback: (feedback: number) => void;
-  setChorusDepth: (depth: number) => void;
-  setLfoRate: (rate: number) => void;
-  setLfoDepth: (d: number) => void;
-  setDistortionAmount: (a: number) => void;
-  setCompressorThreshold: (t: number) => void;
-  setPan: (p: number) => void;
-  setTouch: (t: Partial<TouchState>) => void;
-  setDrawerOpen: (o: boolean) => void;
-  setNoteGate: (index: number, gated: boolean) => void;
-  randomizeAll: () => void;
-
-  // Sequencer actions
-  setBpm: (bpm: number) => void;
-  selectPattern: (idx: number) => void;
   toggleSequencer: () => void;
-  setStep: (idx: number, step: Partial<SeqStep>) => void;
-  setStepActive: (idx: number, active: boolean) => void;
-  randomizeSteps: () => void;
+  setBpm: (bpm: number) => void;
+  setMasterGain: (v: number) => void;
+  setReverbMix: (v: number) => void;
+  setDelayTime: (v: number) => void;
+  setDelayFeedback: (v: number) => void;
+  updateVoice: (id: string, partial: Partial<VoiceConfig>) => void;
+  setVoicePreset: (id: string, preset: string) => void;
+  setTrackStep: (trackIdx: number, stepIdx: number, partial: Partial<SequencerStep>) => void;
+  randomizeTrack: (trackIdx: number) => void;
+  setDrawerOpen: (o: boolean) => void;
+  setShowMixer: (o: boolean) => void;
+  setEditTrackIdx: (idx: number | null) => void;
+  randomizeAll: () => void;
+  setFundamental: (id: string, freq: number) => void;
 }
+
+// ─── Demo patterns per voice ───
+
+function makeS(h: number | null, perc = false, vel = 0.7, active = true): SequencerStep {
+  return { harmonic: h, perc, vel, active };
+}
+function R(): SequencerStep { return makeS(null, false, 0); }
+function K(vel = 0.6): SequencerStep { return makeS(null, true, vel); }
+function H(h: number, vel = 0.7): SequencerStep { return makeS(h, false, vel); }
+function HK(h: number, vel = 0.7): SequencerStep { return makeS(h, true, vel); }
+
+function bassPattern(): SequencerStep[] {
+  const s: SequencerStep[] = [];
+  const pattern = [1,0,2,0,1,0,3,0, 1,0,2,0,3,0,2,1, 1,0,4,0,3,0,2,0, 1,0,3,0,2,0,1,0];
+  for (let i = 0; i < pattern.length; i++) {
+    const h = pattern[i]!;
+    if (h === 0) s.push(i % 4 === 0 ? K(0.5) : R());
+    else s.push(HK(h, 0.8));
+  }
+  return s;
+}
+
+function leadPattern(): SequencerStep[] {
+  const s: SequencerStep[] = [];
+  const pattern = [0,5,0,6, 5,0,7,0, 0,5,0,6, 8,7,6,5, 0,4,0,6, 5,0,7,0, 0,5,0,4, 3,2,1,0];
+  for (let i = 0; i < pattern.length; i++) {
+    const h = pattern[i]!;
+    if (h === 0) s.push(i % 8 === 4 ? K(0.4) : R());
+    else s.push(H(h, 0.6));
+  }
+  return s;
+}
+
+function padPattern(): SequencerStep[] {
+  const s: SequencerStep[] = [];
+  const pattern = [1,0,0,0, 3,0,0,0, 5,0,0,0, 3,0,0,0, 1,0,0,0, 4,0,0,0, 6,0,0,0, 4,0,0,0];
+  for (const h of pattern) {
+    if (h === 0) s.push(R());
+    else s.push(H(h, 0.5));
+  }
+  return s;
+}
+
+function drumPattern(): SequencerStep[] {
+  const s: SequencerStep[] = [];
+  for (let i = 0; i < 32; i++) {
+    const kick = i % 4 === 0;
+    const snare = i % 8 === 4;
+    const hat = i % 2 === 0;
+    if (kick) s.push(HK(1, 0.9));
+    else if (snare) s.push(K(0.7));
+    else if (hat) s.push(K(0.3));
+    else s.push(R());
+  }
+  return s;
+}
+
+const COLORS = ['#06b6d4', '#a855f7', '#f43f5e', '#f59e0b'];
+
+function buildDemoTracks(): Track[] {
+  return [
+    { voiceId: 'bass', steps: bassPattern(), mute: false, solo: false, color: COLORS[0]! },
+    { voiceId: 'lead', steps: leadPattern(), mute: false, solo: false, color: COLORS[1]! },
+    { voiceId: 'pad', steps: padPattern(), mute: false, solo: false, color: COLORS[2]! },
+    { voiceId: 'drum', steps: drumPattern(), mute: false, solo: false, color: COLORS[3]! },
+  ];
+}
+
+
 
 let seqTimer: ReturnType<typeof setInterval> | null = null;
 
-// ─── Advance sequencer — morphs drone gains instead of triggering notes ───
-function advanceSequencer(get: () => HarmonicStore, setFn: (partial: Partial<HarmonicStore>) => void): void {
+function advanceSequencer(get: () => HarmonicStore, set: (p: Partial<HarmonicStore>) => void): void {
   const state = get();
   if (!state.isSequencing || !state.isPlaying) return;
 
-  const step = state.steps[state.currentStep];
-  if (step && step.active) {
-    if (step.activeHarmonic !== null) {
-      // Morph drone: emphasize the active harmonic
-      const h = step.activeHarmonic - 1;
-      const newGains = new Array(16).fill(0.02);
-      newGains[h] = 1.0;
-      // Boost neighbors based on width
-      if (step.width >= 1) {
-        if (h > 0) newGains[h - 1] = 0.4;
-        if (h < 15) newGains[h + 1] = 0.4;
-      }
-      if (step.width >= 2) {
-        if (h > 1) newGains[h - 2] = 0.2;
-        if (h < 14) newGains[h + 2] = 0.2;
-      }
-      setFn({ overtoneGains: newGains });
-      applyParams(state);
+  const step = state.currentStep;
+  const anySolo = state.tracks.some(t => t.solo);
+
+  for (const track of state.tracks) {
+    if (track.mute || (anySolo && !track.solo)) continue;
+    const s = track.steps[step % track.steps.length];
+    if (!s?.active) continue;
+
+    if (s.harmonic !== null) {
+      // Emphasize this harmonic for this voice
+      const gains = new Array(8).fill(0.02);
+      gains[s.harmonic - 1] = 1.0;
+      if (s.harmonic > 1) gains[s.harmonic - 2] = 0.3;
+      if (s.harmonic < 8) gains[s.harmonic] = 0.3;
+      setVoiceHarmonicGains(track.voiceId, gains);
     }
-    if (step.perc) {
-      triggerNoise(0.04, step.vel * 0.7);
+    if (s.perc) {
+      triggerNoiseToVoice(track.voiceId, 0.04, s.vel);
     }
   }
 
-  const next = (state.currentStep + 1) % state.steps.length;
-  setFn({ currentStep: next });
+  set({ currentStep: (step + 1) % 32 });
 }
 
-export { generate1564Pattern };
+export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
+  voices: defaultVoices(),
+  masterGain: 0.7,
+  reverbMix: 0.25,
+  delayTime: 0.3,
+  delayFeedback: 0.25,
+  isPlaying: false,
 
-export const useHarmonicStore = create<HarmonicStore>((set, get) => {
-  const initialPatterns = buildPatterns();
+  bpm: 110,
+  currentStep: 0,
+  isSequencing: false,
+  tracks: buildDemoTracks(),
+  seqTimer: null,
+  selectedTrackIdx: 0,
 
-  return {
-    ...createDefaultHarmonicState(),
-    fundamental: 55,
-    overtoneGains: [...OVERTONE_PRESETS.sub],
-    selectedPreset: 'sub',
-    touch: { x: 0, y: 0, active: false, force: 0.5, count: 0 },
-    drawerOpen: false,
-    noteGates: Array(16).fill(true),
+  drawerOpen: false,
+  showMixer: false,
+  editTrackIdx: null,
 
-    // Sequencer
-    bpm: 110,
-    currentStep: 0,
-    isSequencing: false,
-    selectedPatternIdx: 0,
-    steps: [...initialPatterns[0]!.steps],
-    patterns: initialPatterns,
-    seqTimer: null,
+  init: () => {
+    const ac = getAudioContext();
+    if (ac.state === 'suspended') ac.resume();
+    // Create all voices
+    destroyAllVoices();
+    const voiceCfgs = defaultVoices();
+    set({ voices: voiceCfgs });
+    voiceCfgs.forEach(v => createVoice(v));
+    set({ isPlaying: true });
+  },
 
-    setFundamental: (freq: number) => { set({ fundamental: freq }); applyParams(get()); },
-    setOvertoneGain: (i, g) => {
-      const gains = [...get().overtoneGains];
-      gains[i] = Math.max(0, Math.min(1, g));
-      set({ overtoneGains: gains }); applyParams(get());
-    },
-    setWaveform: (w) => { set({ waveform: w }); const s = get(); if (s.isPlaying) { createHarmonicOscillators(s); startPlayback(); applyParams(s); } },
-    setDetune: (v) => { set({ detune: v }); applyParams(get()); },
-    setFilter: (f, q) => { set({ filterFreq: f, filterQ: q }); applyParams(get()); },
-    setFilterType: (t) => { set({ filterType: t }); applyParams(get()); },
-    setMasterGain: (v) => { set({ masterGain: v }); applyParams(get()); },
+  togglePlayback: () => {
+    const state = get();
+    if (!state.isPlaying) {
+      state.init();
+    } else {
+      destroyAllVoices();
+      if (seqTimer) { clearInterval(seqTimer); seqTimer = null; }
+      set({ isPlaying: false, isSequencing: false, currentStep: 0, seqTimer: null });
+    }
+  },
 
-    togglePlayback: () => {
-      const state = get();
-      if (!state.isPlaying) {
-        const ac = new (window.AudioContext || (window as any).webkitAudioContext)();
-        ac.resume();
-        createHarmonicOscillators(state);
-        startPlayback();
-        applyParams(state);
-        set({ isPlaying: true });
-      } else {
-        stopAllOscillators();
-        if (state.isSequencing) {
-          if (seqTimer) clearInterval(seqTimer); seqTimer = null;
-          set({ isSequencing: false, currentStep: 0 });
-        }
-        set({ isPlaying: false });
+  toggleSequencer: () => {
+    const state = get();
+    if (!state.isSequencing) {
+      if (!state.isPlaying) state.init();
+      set({ currentStep: 0, isSequencing: true });
+      if (seqTimer) clearInterval(seqTimer);
+      seqTimer = setInterval(() => advanceSequencer(get, set), (60 / state.bpm / 4) * 1000);
+      set({ seqTimer: seqTimer as any });
+    } else {
+      if (seqTimer) { clearInterval(seqTimer); seqTimer = null; }
+      set({ isSequencing: false, currentStep: 0, seqTimer: null });
+    }
+  },
+
+  setBpm: (bpm) => {
+    set({ bpm });
+    const state = get();
+    if (state.isSequencing) {
+      if (seqTimer) clearInterval(seqTimer);
+      seqTimer = setInterval(() => advanceSequencer(get, set), (60 / bpm / 4) * 1000);
+      set({ seqTimer: seqTimer as any });
+    }
+  },
+
+  setMasterGain: (v) => { set({ masterGain: v }); setMasterGain(v); },
+  setReverbMix: (v) => { set({ reverbMix: v }); setReverbMix(v); },
+  setDelayTime: (v) => { set({ delayTime: v }); setDelayParams(v, get().delayFeedback); },
+  setDelayFeedback: (v) => { set({ delayFeedback: v }); setDelayParams(get().delayTime, v); },
+
+  updateVoice: (id, partial) => {
+    const voices = get().voices.map(v => v.id === id ? { ...v, ...partial } : v);
+    set({ voices });
+    updateVoice(id, partial);
+  },
+
+  setVoicePreset: (id, preset) => {
+    const gains = OVERTONE_PRESETS[preset];
+    if (!gains) return;
+    const voices = get().voices.map(v => v.id === id ? { ...v, overtoneGains: [...gains] } : v);
+    set({ voices });
+    setVoiceHarmonicGains(id, gains);
+  },
+
+  setTrackStep: (trackIdx, stepIdx, partial) => {
+    const tracks = [...get().tracks];
+    if (trackIdx >= 0 && trackIdx < tracks.length) {
+      const steps = [...tracks[trackIdx]!.steps];
+      if (stepIdx >= 0 && stepIdx < steps.length) {
+        steps[stepIdx] = { ...steps[stepIdx]!, ...partial };
+        tracks[trackIdx] = { ...tracks[trackIdx]!, steps };
+        set({ tracks });
       }
-    },
+    }
+  },
 
-    trigger: (note: string) => {
-      const freqs: Record<string, number> = {
-        'C2':65.41,'D2':73.42,'E2':82.41,'F2':87.31,'G2':98,'A2':110,'B2':123.47,
-        'C3':130.81,'D3':146.83,'E3':164.81,'F3':174.61,'G3':196,'A3':220,'B3':246.94,
-        'C4':261.63,'D4':293.66,'E4':329.63,'F4':349.23,'G4':392,'A4':440,'B4':493.88,
-      };
-      const f = freqs[note]; if (f) { applyParams(get()); triggerNote(f, 0.3, get().waveform); }
-    },
-    triggerFreq: (freq, vel = 0.5) => { applyParams(get()); triggerNote(freq, 0.2, 'triangle', vel); },
-    triggerPerc: (vel = 0.5) => { applyParams(get()); triggerNoise(0.06, vel); },
+  randomizeTrack: (trackIdx) => {
+    const tracks = [...get().tracks];
+    if (trackIdx < 0 || trackIdx >= tracks.length) return;
+    const steps = Array.from({ length: 32 }, () => ({
+      harmonic: Math.random() > 0.4 ? Math.floor(1 + Math.random() * 8) : null,
+      perc: Math.random() > 0.7,
+      vel: 0.3 + Math.random() * 0.7,
+      active: Math.random() > 0.2,
+    }));
+    tracks[trackIdx] = { ...tracks[trackIdx]!, steps };
+    set({ tracks });
+  },
 
-    randomizeOvertones: () => {
-      set({ overtoneGains: Array.from({length:16}, () => Math.random() * 0.8 + 0.1) });
-      applyParams(get());
-    },
-    resetOvertones: () => { set({ overtoneGains: createDefaultHarmonicState().overtoneGains }); applyParams(get()); },
-    setPreset: (p) => { const g = OVERTONE_PRESETS[p]; if (g) { set({ overtoneGains: g, selectedPreset: p }); applyParams(get()); } },
+  setDrawerOpen: (o) => set({ drawerOpen: o }),
+  setShowMixer: (o) => set({ showMixer: o }),
+  setEditTrackIdx: (idx) => set({ editTrackIdx: idx }),
 
-    setReverbMix: (v) => { set({ reverbMix: v }); applyParams(get()); },
-    setDelayTime: (v) => { set({ delayTime: v }); applyParams(get()); },
-    setDelayFeedback: (v) => { set({ delayFeedback: v }); applyParams(get()); },
-    setChorusDepth: (v) => { set({ chorusDepth: v }); applyParams(get()); },
-    setLfoRate: (v) => { set({ lfoRate: v }); applyParams(get()); },
-    setLfoDepth: (v) => { set({ lfoDepth: v }); applyParams(get()); },
-    setDistortionAmount: (v) => { set({ distortionAmount: v }); applyParams(get()); },
-    setCompressorThreshold: (v) => { set({ compressorThreshold: v }); applyParams(get()); },
-    setPan: (v) => { set({ pan: v }); applyParams(get()); },
-    setTouch: (t) => { set(s => ({ touch: { ...s.touch, ...t } })); },
-    setDrawerOpen: (o) => set({ drawerOpen: o }),
-    setNoteGate: (i, g) => { const gates = [...get().noteGates]; gates[i] = g; set({ noteGates: gates }); },
+  randomizeAll: () => {
+    get().voices.forEach(v => {
+      const idx = Math.floor(Math.random() * Object.keys(OVERTONE_PRESETS).length);
+      const preset = Object.keys(OVERTONE_PRESETS)[idx]!;
+      get().setVoicePreset(v.id, preset);
+    });
+    get().tracks.forEach((_, i) => get().randomizeTrack(i));
+  },
 
-    randomizeAll: () => {
-      const s = get();
-      s.setFundamental(40 + Math.random() * 400);
-      s.randomizeOvertones();
-      s.setDetune((Math.random() - 0.5) * 80);
-      s.setFilter(100 + Math.random() * 4000, 0.5 + Math.random() * 10);
-      s.setMasterGain(0.3 + Math.random() * 0.5);
-      s.setReverbMix(Math.random() * 0.6);
-      s.setDelayTime(0.1 + Math.random() * 0.8);
-      s.setDelayFeedback(Math.random() * 0.7);
-      s.setChorusDepth(Math.random() * 0.8);
-      s.setLfoRate(0.1 + Math.random() * 4);
-      s.setLfoDepth(Math.random() * 500);
-      s.setDistortionAmount(Math.random() * 0.5);
-      s.setPan((Math.random() - 0.5) * 2);
-    },
-
-    // ─── Sequencer ───
-
-    setBpm: (bpm: number) => {
-      set({ bpm });
-      const state = get();
-      if (state.isSequencing) {
-        if (seqTimer) clearInterval(seqTimer);
-        seqTimer = setInterval(() => advanceSequencer(get, set), (60 / bpm / 4) * 1000);
-        set({ seqTimer: seqTimer as any });
-      }
-    },
-
-    selectPattern: (idx: number) => {
-      const pats = get().patterns;
-      if (idx >= 0 && idx < pats.length) {
-        const pat = pats[idx]!;
-        set({ selectedPatternIdx: idx, steps: [...pat.steps], bpm: pat.bpm, currentStep: 0 });
-      }
-    },
-
-    toggleSequencer: () => {
-      const state = get();
-      if (!state.isSequencing) {
-        if (!state.isPlaying) state.togglePlayback();
-        set({ currentStep: 0, isSequencing: true, masterGain: 0.4, reverbMix: 0.25 });
-        applyParams(get());
-        if (seqTimer) clearInterval(seqTimer);
-        seqTimer = setInterval(() => advanceSequencer(get, set), (60 / state.bpm / 4) * 1000);
-        set({ seqTimer: seqTimer as any });
-      } else {
-        if (seqTimer) { clearInterval(seqTimer); seqTimer = null; }
-        set({ isSequencing: false, currentStep: 0, seqTimer: null });
-        const def = createDefaultHarmonicState();
-        set({ masterGain: def.masterGain, reverbMix: def.reverbMix, overtoneGains: [...def.overtoneGains] });
-        applyParams(get());
-      }
-    },
-
-    setStep: (idx, partial) => {
-      const steps = [...get().steps];
-      if (idx >= 0 && idx < steps.length) { steps[idx] = { ...steps[idx]!, ...partial }; set({ steps }); }
-    },
-    setStepActive: (idx, active) => {
-      const steps = [...get().steps];
-      if (idx >= 0 && idx < steps.length) { steps[idx] = { ...steps[idx]!, active }; set({ steps }); }
-    },
-
-    randomizeSteps: () => {
-      const steps: SeqStep[] = Array.from({ length: 16 }, () => ({
-        activeHarmonic: Math.random() > 0.3 ? Math.floor(1 + Math.random() * 12) : null,
-        width: Math.random() > 0.7 ? 1 : 0,
-        perc: Math.random() > 0.6,
-        vel: 0.3 + Math.random() * 0.7,
-        active: Math.random() > 0.2,
-      }));
-      set({ steps, currentStep: 0 });
-    },
-  };
-});
+  setFundamental: (id, freq) => {
+    get().updateVoice(id, { fundamental: freq });
+  },
+}));
