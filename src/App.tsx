@@ -6,9 +6,9 @@ import { useHarmonicStore } from './store/harmonicStore';
 function App() {
   const store = useHarmonicStore();
   const {
-    isPlaying, isSequencing, fundamental, generativeType,
+    isPlaying, isSequencing, fundamental,
     drawerOpen, setDrawerOpen, togglePlayback, toggleSequencer,
-    selectPattern, setFundamental, load1564,
+    selectPattern, setFundamental,
   } = store;
 
   const handleToggleDrawer = useCallback(() => {
@@ -55,9 +55,10 @@ function App() {
           <span className="text-[8px] text-white/40 font-mono">
             {isSequencing ? 'SEQ' : isPlaying ? 'LIVE' : 'STOP'}
           </span>
-          {generativeType === '1564' && (
+          {false && (
             <span className="text-[7px] text-amber-400/60 font-mono">1564</span>
           )}
+          <span className="text-[7px] text-purple-400/60 font-mono">{fundamental.toFixed(0)}Hz</span>
           {isSequencing && (
             <span className="text-[7px] text-emerald-400/60 font-mono">
               {useHarmonicStore.getState().bpm.toFixed(0)}BPM
@@ -66,16 +67,7 @@ function App() {
         </div>
       </div>
 
-      {/* 1564 indicator */}
-      {generativeType === '1564' && isSequencing && (
-        <div className="absolute top-12 left-1/2 -translate-x-1/2 pointer-events-none z-10">
-          <div className="text-[9px] text-white/30 font-mono text-center">
-            <span className="text-purple-300/60">HARMONIC SWEEP</span>
-            <span className="mx-1.5 text-white/20">·</span>
-            <span className="text-purple-300/40">{fundamental.toFixed(0)}Hz</span>
-          </div>
-        </div>
-      )}
+
 
       {/* Gesture hint */}
       <div className="absolute bottom-28 left-1/2 -translate-x-1/2 pointer-events-none z-10">
@@ -118,18 +110,7 @@ function App() {
             {isSequencing ? '⏹' : '🔀'}
           </button>
 
-          {/* 1564 button */}
-          <button onClick={() => {
-            load1564();
-            if (!isSequencing) toggleSequencer();
-          }}
-            className={`h-12 px-3 rounded-xl flex items-center justify-center text-[9px] font-bold transition-all active:scale-90 ${
-              generativeType === '1564'
-                ? 'bg-amber-600/60 shadow-lg shadow-amber-500/30 text-amber-200'
-                : 'bg-white/10 active:bg-white/20'
-            }`}>
-            1-5-6-4
-          </button>
+
 
           <div className="flex-1" />
 

@@ -48,7 +48,7 @@ export function HarmonicVisualizer() {
       overtoneGains, fundamental, waveform, filterFreq,
       reverbMix, delayFeedback, chorusDepth, lfoRate, lfoDepth,
       distortionAmount, detune, isPlaying,
-      currentStep, steps, arpeggio
+      currentStep, steps
     } = store;
 
     const tx = touchRef.current.x;
@@ -281,13 +281,13 @@ export function HarmonicVisualizer() {
     ctx.fillText(`${fundamental.toFixed(0)}Hz`, 15, 20);
     ctx.fillText(waveform.toUpperCase(), 15, 32);
     
-    // Current arpeggio step info
-    if (arpeggio && isPlaying && steps[currentStep] && steps[currentStep].active && steps[currentStep].harmonic !== null) {
-      const h = steps[currentStep].harmonic!;
+    // Current harmonic emphasis
+    if (isPlaying && steps[currentStep] && steps[currentStep].active && steps[currentStep].activeHarmonic !== null) {
+      const h = steps[currentStep].activeHarmonic!;
       ctx.fillStyle = 'rgba(168,85,247,0.5)';
       ctx.font = 'bold 11px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(`H${h}  ${(fundamental * h).toFixed(0)}Hz`, cx, 22);
+      ctx.fillText(`H${h}`, cx, 22);
     }
     
     ctx.textAlign = 'right';

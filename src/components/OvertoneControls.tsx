@@ -89,8 +89,6 @@ export function OvertoneControls() {
                     : 'bg-white/5 active:bg-white/20'
                 }`}>
                 {p.name}
-                {p.arpeggio && <span className="ml-1 opacity-60">🌀</span>}
-                {p.generative === '1564' && <span className="ml-1 text-amber-400">✨</span>}
               </button>
             ))}
             <button onClick={store.randomizeSteps}
@@ -101,14 +99,8 @@ export function OvertoneControls() {
 
           {/* Mode indicator */}
           <div className="flex items-center gap-2 mb-1.5">
-            <div className={`text-[8px] font-mono px-2 py-0.5 rounded-full ${
-              store.generativeType === '1564'
-                ? 'bg-amber-600/40 text-amber-300'
-                : store.arpeggio
-                  ? 'bg-purple-600/40 text-purple-300'
-                  : 'bg-cyan-600/40 text-cyan-300'
-            }`}>
-              {store.generativeType === '1564' ? '✨ 1564' : store.arpeggio ? '🌀 HARMONIC' : '♩ FIXED NOTES'}
+            <div className="text-[8px] font-mono px-2 py-0.5 rounded-full bg-purple-600/40 text-purple-300">
+              HARMONIC MORPH
             </div>
             <div className="text-[8px] text-white/30 font-mono">
               Root: <span className="text-purple-300">{store.fundamental.toFixed(0)} Hz</span>
@@ -119,20 +111,17 @@ export function OvertoneControls() {
           <Slider label="BPM" value={store.bpm} min={40} max={200} step={1}
             onChange={store.setBpm} format={(v) => `${v.toFixed(0)}`} />
 
-          {store.generativeType === '1564' && (
-            <div className="mb-1 px-2 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
-              <div className="text-[7px] text-amber-300/60 font-mono mb-1">
-                1-5-6-4 PROGRESSION — each group of 4 steps is a I-V-vi-IV in the key of the current harmonic
+          {store.selectedPatternIdx >= 0 && (
+            <div className="mb-1 px-2 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
+              <div className="text-[7px] text-purple-300/60 font-mono mb-1">
+                Each step emphasizes a different harmonic — the drone morphs as it sequences
               </div>
               <Slider label="Root Frequency" value={store.fundamental} min={30} max={500} step={1}
                 onChange={store.setFundamental} format={(v) => `${v.toFixed(0)} Hz`} />
-              <div className="text-[7px] text-amber-300/40 font-mono mt-1 text-center">
-                H1({(store.fundamental*1).toFixed(0)}) · H2({(store.fundamental*2).toFixed(0)}) · H3({(store.fundamental*3).toFixed(0)}) · H4({(store.fundamental*4).toFixed(0)})
-              </div>
             </div>
           )}
 
-          {store.arpeggio && (
+          {false && (
             <div className="mb-1 px-2 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
               <div className="text-[7px] text-purple-300/60 font-mono mb-1">
                 HARMONIC SERIES — changing the root retunes the entire arpeggio
@@ -149,24 +138,14 @@ export function OvertoneControls() {
           <div className="grid gap-[2px]" style={{ gridTemplateColumns: `repeat(${Math.min(store.steps.length, 16)}, 1fr)` }}>
             {store.steps.map((step, i) => {
               const isCurrent = i === store.currentStep;
-              const hasNote = step.note !== null || step.harmonic !== null;
+              const hasNote = step.activeHarmonic !== null;
               const hasPerc = step.perc;
               // Show label: harmonic index or note name
               let label = '·';
               if (step.active && hasNote) {
-                if (step.customFreq !== null && store.generativeType === '1564') {
-                  const h = Math.round(step.customFreq / store.fundamental);
-                  if (h >= 1 && h <= 16) {
-                    label = `H${h}`;
-                  } else {
-                    // Show scale degree: 1, 5, 6, 4 position in the 4-note group
-                    const pos = i % 4;
-                    label = ['1','5','6','4'][pos] || '·';
-                  }
-                } else if (store.arpeggio && step.harmonic !== null) {
-                  label = `H${step.harmonic}`;
-                } else if (step.note) {
-                  label = step.note.replace(/\d/, '');
+                if (step.activeHarmonic !== null) {
+                  label = `H${step.activeHarmonic}`;
+                  if (step.width > 0) label += `+${step.width}`;
                 }
               }
               return (
@@ -179,9 +158,7 @@ export function OvertoneControls() {
                       ? hasNote
                         ? hasPerc
                           ? 'bg-amber-600/60'
-                          : store.arpeggio
-                            ? 'bg-purple-700/60'
-                            : 'bg-emerald-700/60'
+                          : 'bg-purple-700/60'
                         : hasPerc
                           ? 'bg-amber-800/40'
                           : 'bg-white/8'
@@ -194,7 +171,7 @@ export function OvertoneControls() {
           </div>
 
           {/* Harmonic overtone legend */}
-          {store.arpeggio && (
+          {false && (
             <div className="mt-2 flex flex-wrap gap-1">
               {[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16].map(h => (
                 <div key={h}
