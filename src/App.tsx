@@ -69,19 +69,17 @@ function App() {
       {/* 1564 indicator */}
       {generativeType === '1564' && isSequencing && (
         <div className="absolute top-12 left-1/2 -translate-x-1/2 pointer-events-none z-10">
-          <div className="text-[9px] text-amber-300/40 font-mono text-center">
-            1 — 5 — 6 — 4
+          <div className="text-[9px] text-white/30 font-mono text-center">
+            <span className="text-purple-300/60">HARMONIC SWEEP</span>
             <span className="mx-1.5 text-white/20">·</span>
-            <span className="text-purple-300/50">H1–H8</span>
-            <span className="mx-1.5 text-white/20">·</span>
-            <span className="text-amber-300/60">{fundamental.toFixed(0)}Hz ROOT</span>
+            <span className="text-purple-300/40">{fundamental.toFixed(0)}Hz</span>
           </div>
         </div>
       )}
 
       {/* Gesture hint */}
       <div className="absolute bottom-28 left-1/2 -translate-x-1/2 pointer-events-none z-10">
-        <div className="text-[9px] text-white/20 font-mono text-center">TAP · DRAG · TWO FINGERS</div>
+        <div className="text-[9px] text-white/15 font-mono text-center">TAP · DRAG · TWO FINGERS</div>
       </div>
 
       {/* ─── CENTER BIG PLAY/PAUSE ─── */}

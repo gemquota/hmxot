@@ -76,78 +76,67 @@ function HK(harmonic: number, vel = 0.7): SeqStep { return makeStep(null, harmon
 //   4 = H(n-1) (step down — leading back)
 // Every note is a harmonic of the root → always consonant with drone
 // ═══════════════════════════════════════════
-function generate1564Pattern(fundamental: number): Pattern {
+function generate1564Pattern(_fundamental: number): Pattern {
   const steps: SeqStep[] = [];
   const bpm = 128;
 
-  // Octave-compress to stay in 150-900Hz range
-  const oc = (freq: number) => {
-    while (freq < 150) freq *= 2;
-    while (freq > 900) freq /= 2;
-    return freq;
-  };
+  // Harmonic sequence that creates a musical arc through the overtone series
+  // Each "zone" is 8 steps (2 bars at 16th notes) focused on a harmonic region
+  // Every note is a pure harmonic of the fundamental — perfectly consonant
 
-  // Scale degree helper: frequency = tonic * 2^(semitones/12)
-  const deg = (tonic: number, semitones: number) => oc(tonic * Math.pow(2, semitones / 12));
-
-  // For each harmonic H1-H8, compute I-VI-V-IV frequencies
-  // But vary the rhythm and pattern per harmonic for musical phrasing
-  const phrasePatterns = [
-    // H1: solid groove — quarter notes with rests
-    { rhythm: [1, 0, 0, 1, 0, 1, 0, 0], degs: [0, 0, 0, 9, 0, 7, 0, 0] },
-    // H2: syncopated — offbeat entries
-    { rhythm: [1, 0, 1, 0, 0, 0, 1, 0], degs: [0, 0, 9, 0, 0, 0, 7, 0] },
-    // H3: rising — four notes ascending
-    { rhythm: [1, 1, 1, 1, 0, 0, 0, 1], degs: [0, 9, 7, 5, 0, 0, 0, 0] },
-    // H4: call and response
-    { rhythm: [1, 0, 0, 0, 1, 1, 0, 0], degs: [0, 0, 0, 0, 9, 7, 0, 0] },
-    // H5: triplet feel variation
-    { rhythm: [1, 0, 1, 0, 1, 0, 0, 0], degs: [0, 0, 7, 0, 5, 0, 0, 0] },
-    // H6: sparse
-    { rhythm: [1, 0, 0, 1, 0, 0, 1, 0], degs: [0, 0, 0, 9, 0, 0, 7, 0] },
-    // H7: falling
-    { rhythm: [1, 1, 0, 0, 1, 0, 0, 0], degs: [0, 5, 0, 0, 9, 0, 0, 0] },
-    // H8: full resolution
-    { rhythm: [1, 1, 1, 1, 1, 1, 1, 1], degs: [0, 5, 9, 9, 7, 5, 0, 9] },
+  // Each zone: [h1, h2, h3, h4, h5, h6, h7, h8] (harmonic indices or 0=rest)
+  const zones: number[][] = [
+    // Zone 1 (H1): Establish the fundamental with octave and fifth
+    [1, 2, 1, 3, 1, 2, 1, 3],
+    // Zone 2 (H2): Move up, introduce the third
+    [2, 3, 2, 5, 2, 3, 2, 5],
+    // Zone 3 (H3): Fifth region with sixth harmonic
+    [3, 4, 3, 6, 3, 4, 3, 6],
+    // Zone 4 (H4): Two octaves up, pure octave jumps
+    [4, 5, 4, 7, 4, 5, 4, 7],
+    // Zone 5 (H5): Third region, peak
+    [5, 6, 5, 8, 5, 6, 5, 8],
+    // Zone 6 (H6): Highest, then start descent  
+    [6, 7, 6, 8, 6, 5, 4, 3],
+    // Zone 7 (H7): Descending through the series
+    [7, 6, 5, 4, 3, 2, 1, 2],
+    // Zone 8 (H8): Final cadence back to root
+    [8, 7, 6, 5, 4, 3, 2, 1],
   ];
 
-  for (let hi = 0; hi < 8; hi++) {
-    const h = hi + 1;
-    const tonic = fundamental * h;
-    const phrase = phrasePatterns[hi]!;
+  // Kick pattern: strong beats (positions 0, 4)
+  // Snare pattern: backbeats (positions 2, 6)
+  const percPattern = (pos: number, zone: number): { kick: boolean; snare: boolean } => {
+    const kick = pos === 0 || (pos === 4 && zone % 2 === 0);
+    const snare = pos === 2 || pos === 6;
+    return { kick, snare };
+  };
 
-    // 8 steps per harmonic (2 bars at 16th notes)
+  for (let zi = 0; zi < zones.length; zi++) {
+    const zone = zones[zi]!;
     for (let beat = 0; beat < 8; beat++) {
-      const shouldPlay = phrase.rhythm[beat] === 1;
-      const semitones = phrase.degs[beat] ?? 0;
+      const hi = zone[beat]!;
+      const { kick, snare } = percPattern(beat, zi);
+      const hasPerc = kick || snare;
 
-      // Determine which scale degree this is
-      let isKick = false;
-      if (beat === 0) isKick = true;
-      else if (beat === 4 && hi % 2 === 0) isKick = true;
-      else if (beat === 2 && hi >= 4) isKick = true;
-      
-      // Snare/clap on every 4th beat (positions 3, 7)
-      const isSnare = beat === 3 || beat === 7;
-
-      if (shouldPlay && semitones > 0) {
-        const freq = deg(tonic, semitones);
-        steps.push(makeStep(null, null, freq, isKick || isSnare, 0.65 + (beat === 0 ? 0.3 : 0)));
-      } else if (shouldPlay && semitones === 0) {
-        // I (tonic) — use harmonic for rich tone
-        const freq = oc(tonic);
-        steps.push(makeStep(null, h, freq, isKick || isSnare, 0.85 + (beat === 0 ? 0.15 : 0)));
+      if (hi > 0) {
+        // Play the harmonic — pure, consonant, beautiful
+        const vel = beat === 0 ? 0.9 : 0.5 + Math.random() * 0.2;
+        steps.push(H(hi, vel));
+        // Add percussion on the same step
+        if (hasPerc && kick) steps[steps.length - 1]!.perc = true;
+        else if (hasPerc && snare) steps[steps.length - 1]!.perc = true;
       } else {
-        // Rest or just percussion
-        if (isKick) steps.push(K(0.6));
-        else if (isSnare) steps.push(makeStep(null, null, null, true, 0.5));
+        // Rest with possible percussion
+        if (kick) steps.push(K(0.7));
+        else if (snare) steps.push(makeStep(null, null, null, true, 0.5));
         else steps.push(R());
       }
     }
   }
 
   return {
-    name: '1564', bpm, arpeggio: false,
+    name: '1564', bpm, arpeggio: true,
     generative: '1564',
     steps,
   };
@@ -269,7 +258,7 @@ interface HarmonicStore extends HarmonicState {
 }
 
 let seqTimer: ReturnType<typeof setInterval> | null = null;
-const MELODY_NOTE_DURATION = 0.28;
+const MELODY_NOTE_DURATION = 0.15;
 
 function advanceSequencer(get: () => HarmonicStore, setFn: (partial: Partial<HarmonicStore>) => void): void {
   const state = get();
@@ -314,7 +303,7 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => {
     steps: [...initialPatterns[_1564Idx]!.steps],
     patterns: initialPatterns,
     seqTimer: null,
-    arpeggio: false,
+    arpeggio: true,
     generativeType: '1564',
     seqDroneReduced: false,
 
