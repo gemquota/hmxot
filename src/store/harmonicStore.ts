@@ -21,6 +21,11 @@ interface HarmonicStore extends HarmonicState {
   randomizeOvertones: () => void;
   resetOvertones: () => void;
   setPreset: (preset: string) => void;
+  // Effects
+  setReverbMix: (mix: number) => void;
+  setDelayTime: (time: number) => void;
+  setDelayFeedback: (feedback: number) => void;
+  setChorusDepth: (depth: number) => void;
 }
 
 const NOTE_FREQUENCIES: Record<string, number> = {
@@ -38,6 +43,9 @@ const OVERTONE_PRESETS: Record<string, number[]> = {
   'bell': [1, 0.6, 0.4, 0.8, 0.3, 0.7, 0.2, 0.5, 0.15, 0.4, 0.1, 0.3, 0.08, 0.2, 0.05, 0.1],
   'organ': [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1, 0.08, 0.05, 0.03, 0.02],
   'metallic': [1, 0.3, 0.9, 0.2, 0.8, 0.15, 0.7, 0.1, 0.6, 0.08, 0.5, 0.05, 0.4, 0.03, 0.3, 0.02],
+  'cosmic': [1, 0.4, 0.6, 0.3, 0.8, 0.2, 0.7, 0.15, 0.6, 0.1, 0.5, 0.08, 0.4, 0.05, 0.3, 0.03],
+  'crystal': [1, 0.7, 0.1, 0.9, 0.05, 0.8, 0.02, 0.7, 0.01, 0.6, 0.005, 0.5, 0.003, 0.4, 0.002, 0.3],
+  'warm': [1, 0.6, 0.4, 0.3, 0.25, 0.2, 0.18, 0.15, 0.12, 0.1, 0.08, 0.06, 0.05, 0.04, 0.03, 0.02],
 };
 
 export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
@@ -56,7 +64,6 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
   },
 
   setWaveform: (wave: OscillatorType) => {
-    // Waveform can't change on running oscillators — recreate them
     set({ waveform: wave });
     if (get().isPlaying) {
       createHarmonicOscillators(get());
@@ -116,5 +123,26 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
       set({ overtoneGains: gains });
       if (get().isPlaying) updateHarmonics(get());
     }
+  },
+  
+  // Effects
+  setReverbMix: (mix: number) => {
+    set({ reverbMix: mix });
+    if (get().isPlaying) updateHarmonics(get());
+  },
+  
+  setDelayTime: (time: number) => {
+    set({ delayTime: time });
+    if (get().isPlaying) updateHarmonics(get());
+  },
+  
+  setDelayFeedback: (feedback: number) => {
+    set({ delayFeedback: feedback });
+    if (get().isPlaying) updateHarmonics(get());
+  },
+  
+  setChorusDepth: (depth: number) => {
+    set({ chorusDepth: depth });
+    if (get().isPlaying) updateHarmonics(get());
   },
 }));
