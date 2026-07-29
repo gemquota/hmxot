@@ -36,11 +36,6 @@ function Section({ title, children, defaultOpen = true }: { title: string; child
   );
 }
 
-
-function noteToLabel(n: string): string {
-  return n;
-}
-
 export function OvertoneControls() {
   const store = useHarmonicStore();
 
@@ -82,17 +77,20 @@ export function OvertoneControls() {
       {/* Scrollable controls */}
       <div className="flex-1 overflow-y-auto">
 
-        {/* ═══ SEQUENCER SECTION ═══ */}
-        <Section title="Sequencer">
+        {/* ═══ SEQUENCER ═══ */}
+        <Section title="Sequencer / Arpeggio">
           {/* Pattern selector */}
-          <div className="flex gap-1 mb-2">
+          <div className="flex flex-wrap gap-1 mb-2">
             {store.patterns.map((p, i) => (
               <button key={p.name} onClick={() => store.selectPattern(i)}
-                className={`flex-1 py-1.5 rounded-lg text-[8px] font-medium transition-all active:scale-95 capitalize ${
+                className={`px-2 py-1.5 rounded-lg text-[8px] font-medium transition-all active:scale-95 capitalize ${
                   store.selectedPatternIdx === i
                     ? 'bg-emerald-600/60 text-white'
                     : 'bg-white/5 active:bg-white/20'
-                }`}>{p.name}</button>
+                }`}>
+                {p.name}
+                {p.arpeggio && <span className="ml-1 opacity-60">🌀</span>}
+              </button>
             ))}
             <button onClick={store.randomizeSteps}
               className="px-2 py-1.5 rounded-lg bg-cyan-500/20 active:bg-cyan-500/40 text-[8px] font-medium active:scale-95">
@@ -100,38 +98,88 @@ export function OvertoneControls() {
             </button>
           </div>
 
-          {/* BPM */}
+          {/* Mode indicator */}
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className={`text-[8px] font-mono px-2 py-0.5 rounded-full ${
+              store.arpeggio
+                ? 'bg-purple-600/40 text-purple-300'
+                : 'bg-cyan-600/40 text-cyan-300'
+            }`}>
+              {store.arpeggio ? '🌀 HARMONIC' : '♩ FIXED NOTES'}
+            </div>
+            <div className="text-[8px] text-white/30 font-mono">
+              Root: <span className="text-purple-300">{store.fundamental.toFixed(0)} Hz</span>
+            </div>
+          </div>
+
+          {/* BPM + Fundamental linked */}
           <Slider label="BPM" value={store.bpm} min={40} max={200} step={1}
             onChange={store.setBpm} format={(v) => `${v.toFixed(0)}`} />
 
+          {store.arpeggio && (
+            <div className="mb-1 px-2 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
+              <div className="text-[7px] text-purple-300/60 font-mono mb-1">
+                HARMONIC SERIES — changing the root retunes the entire arpeggio
+              </div>
+              <Slider label="Root Frequency" value={store.fundamental} min={30} max={500} step={1}
+                onChange={store.setFundamental} format={(v) => `${v.toFixed(0)} Hz`} />
+            </div>
+          )}
+
           {/* Step grid */}
           <div className="text-[8px] text-white/30 mb-1 font-mono">
-            Current step: <span className="text-emerald-400">{store.currentStep}</span> / {store.steps.length - 1}
+            Step <span className="text-emerald-400">{store.currentStep}</span>/{store.steps.length - 1}
           </div>
           <div className="grid gap-[2px]" style={{ gridTemplateColumns: `repeat(${Math.min(store.steps.length, 16)}, 1fr)` }}>
             {store.steps.map((step, i) => {
               const isCurrent = i === store.currentStep;
-              const hasNote = step.note !== null;
+              const hasNote = step.note !== null || step.harmonic !== null;
               const hasPerc = step.perc;
+              // Show label: harmonic index or note name
+              let label = '·';
+              if (step.active && hasNote) {
+                if (store.arpeggio && step.harmonic !== null) {
+                  label = `H${step.harmonic}`;
+                } else if (step.note) {
+                  label = step.note.replace(/\d/, '');
+                }
+              }
               return (
                 <button key={i} onClick={() => store.setStepActive(i, !step.active)}
                   className={`aspect-square rounded-md text-[6px] font-mono flex flex-col items-center justify-center
                     transition-all active:scale-90 ${
-                    isCurrent
-                      ? 'ring-1 ring-emerald-400 ring-offset-1 ring-offset-black/50'
-                      : ''
+                    isCurrent ? 'ring-1 ring-emerald-400 ring-offset-1 ring-offset-black/50' : ''
                   } ${
                     step.active
                       ? hasNote
-                        ? hasPerc ? 'bg-amber-600/60' : 'bg-emerald-700/60'
-                        : hasPerc ? 'bg-amber-800/40' : 'bg-white/8'
+                        ? hasPerc
+                          ? 'bg-amber-600/60'
+                          : store.arpeggio
+                            ? 'bg-purple-700/60'
+                            : 'bg-emerald-700/60'
+                        : hasPerc
+                          ? 'bg-amber-800/40'
+                          : 'bg-white/8'
                       : 'bg-white/[0.03] opacity-40'
                   }`}>
-                  <span>{step.active ? (hasNote ? noteToLabel(step.note!) : hasPerc ? '👆' : '·') : '·'}</span>
+                  <span>{label}</span>
                 </button>
               );
             })}
           </div>
+
+          {/* Harmonic overtone legend */}
+          {store.arpeggio && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16].map(h => (
+                <div key={h}
+                  className="text-[6px] font-mono px-1 py-0.5 rounded bg-white/5 text-white/30"
+                  title={`${(store.fundamental * h).toFixed(0)} Hz`}>
+                  H{h}
+                </div>
+              ))}
+            </div>
+          )}
         </Section>
 
         {/* ═══ TIMBRE ═══ */}
@@ -140,9 +188,7 @@ export function OvertoneControls() {
             {PRESETS.slice(0, 8).map(p => (
               <button key={p} onClick={() => store.setPreset(p)}
                 className={`py-1.5 rounded-lg text-[8px] font-medium transition-all active:scale-95 capitalize ${
-                  store.selectedPreset === p
-                    ? 'bg-purple-500/60 text-white'
-                    : 'bg-white/5 active:bg-white/20'
+                  store.selectedPreset === p ? 'bg-purple-500/60 text-white' : 'bg-white/5 active:bg-white/20'
                 }`}>{p}</button>
             ))}
           </div>
@@ -150,9 +196,7 @@ export function OvertoneControls() {
             {PRESETS.slice(8).map(p => (
               <button key={p} onClick={() => store.setPreset(p)}
                 className={`py-1.5 rounded-lg text-[8px] font-medium transition-all active:scale-95 capitalize ${
-                  store.selectedPreset === p
-                    ? 'bg-purple-500/60 text-white'
-                    : 'bg-white/5 active:bg-white/20'
+                  store.selectedPreset === p ? 'bg-purple-500/60 text-white' : 'bg-white/5 active:bg-white/20'
                 }`}>{p}</button>
             ))}
           </div>
@@ -224,7 +268,6 @@ export function OvertoneControls() {
           <Slider label="Delay Feedback" value={store.delayFeedback} min={0} max={0.9} step={0.01}
             onChange={store.setDelayFeedback} format={(v) => `${(v * 100).toFixed(0)}%`} />
         </Section>
-
         <Section title="FX — Modulation">
           <Slider label="Chorus Depth" value={store.chorusDepth} min={0} max={1} step={0.01}
             onChange={store.setChorusDepth} format={(v) => `${(v * 100).toFixed(0)}%`} />
@@ -233,7 +276,6 @@ export function OvertoneControls() {
           <Slider label="LFO Depth" value={store.lfoDepth} min={0} max={800} step={1}
             onChange={store.setLfoDepth} format={(v) => v.toFixed(0)} />
         </Section>
-
         <Section title="FX — Distortion / Dynamics">
           <Slider label="Distortion" value={store.distortionAmount} min={0} max={1} step={0.01}
             onChange={store.setDistortionAmount} format={(v) => `${(v * 100).toFixed(0)}%`} />
@@ -242,14 +284,10 @@ export function OvertoneControls() {
           <Slider label="Stereo Pan" value={store.pan} min={-1} max={1} step={0.01}
             onChange={store.setPan} format={(v) => v === 0 ? 'C' : v < 0 ? `L${Math.abs(v).toFixed(1)}` : `R${v.toFixed(1)}`} />
         </Section>
-
-        {/* ═══ VOLUME ═══ */}
         <Section title="Volume">
           <Slider label="Master" value={store.masterGain} min={0} max={1} step={0.01}
             onChange={store.setMasterGain} format={(v) => `${(v * 100).toFixed(0)}%`} />
         </Section>
-
-        {/* ═══ NOTE TRIGGERS ═══ */}
         <Section title="Note Triggers">
           <div className="grid grid-cols-7 gap-1">
             {['C4','D4','E4','F4','G4','A4','B4'].map(n => (
@@ -264,19 +302,15 @@ export function OvertoneControls() {
             ))}
           </div>
           <button onClick={() => store.triggerPerc()}
-            className="w-full mt-1 py-2 rounded-xl bg-amber-500/20 active:bg-amber-500/40 text-[9px] font-medium active:scale-95">
-            👆 PERCUSSION HIT
-          </button>
+            className="w-full mt-1 py-2 rounded-xl bg-amber-500/20 active:bg-amber-500/40 text-[9px] font-medium active:scale-95">👆 PERCUSSION HIT</button>
         </Section>
-
-        {/* ═══ ABOUT ═══ */}
         <Section title="About HMXOT">
           <div className="text-[8px] text-white/30 leading-relaxed">
             <p>Touch canvas to play notes. Vertical=velocity, horizontal=pitch.</p>
-            <p className="mt-1">1-finger drag: ↔ detune, ↕ filter cutoff.</p>
-            <p className="mt-1">2-finger drag: ↔ delay time, ↕ reverb mix.</p>
+            <p className="mt-1">1-finger drag: ↔ detune, ↕ filter.</p>
+            <p className="mt-1">2-finger drag: ↔ delay, ↕ reverb.</p>
             <p className="mt-1">Double-tap: toggle panel.</p>
-            <p className="mt-1 text-purple-400">HMXOT — Harmonic Overtones eXperiential Tool</p>
+            <p className="mt-1 text-purple-400">🌀 Harmonic arpeggio patterns track the root frequency — changing the fundamental retunes the entire sequence through the overtone series.</p>
           </div>
         </Section>
       </div>

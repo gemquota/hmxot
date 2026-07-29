@@ -21,16 +21,18 @@ interface TouchState {
 }
 
 export interface SeqStep {
-  note: string | null;   // null = rest
-  perc: boolean;          // trigger percussion hit
-  vel: number;            // velocity 0-1
-  active: boolean;        // step enabled
+  note: string | null;     // fixed note name (null = rest)
+  harmonic: number | null; // harmonic index 1-16 (overrides note when set)
+  perc: boolean;           // trigger percussion hit
+  vel: number;             // velocity 0-1
+  active: boolean;         // step enabled
 }
 
 export interface Pattern {
   name: string;
   steps: SeqStep[];
   bpm: number;
+  arpeggio: boolean; // true = steps use harmonic indices, false = fixed notes
 }
 
 const NOTE_FREQUENCIES: Record<string, number> = {
@@ -40,21 +42,45 @@ const NOTE_FREQUENCIES: Record<string, number> = {
   'C5': 523.25, 'D5': 587.33, 'E5': 659.25, 'F5': 698.46, 'G5': 783.99, 'A5': 880.00, 'B5': 987.77,
 };
 
-// ─── Pre-programmed patterns ───
-
-function makeStep(note: string | null, perc = false, vel = 0.7, active = true): SeqStep {
-  return { note, perc, vel, active };
+// ═══════════════════════════════════
+// Helper: get frequency from a step
+// ═══════════════════════════════════
+function stepFreq(step: SeqStep, fundamental: number, arpeggio: boolean): number | null {
+  if (arpeggio && step.harmonic !== null) {
+    return fundamental * step.harmonic;
+  }
+  if (step.note) {
+    return NOTE_FREQUENCIES[step.note] || null;
+  }
+  return null;
 }
 
-function R(): SeqStep { return makeStep(null, false, 0); }
-function N(note: string, vel = 0.7): SeqStep { return makeStep(note, false, vel); }
-function K(vel = 0.7): SeqStep { return makeStep(null, true, vel); }
-function NK(note: string, vel = 0.7): SeqStep { return makeStep(note, true, vel); }
+// ─── Pattern builder helpers ───
+function makeStep(
+  note: string | null = null,
+  harmonic: number | null = null,
+  perc = false,
+  vel = 0.7,
+  active = true
+): SeqStep {
+  return { note, harmonic, perc, vel, active };
+}
 
-// Techno pattern
+// Fixed-note helpers
+function R(): SeqStep { return makeStep(null, null, false, 0); }
+function N(note: string, vel = 0.7): SeqStep { return makeStep(note, null, false, vel); }
+function K(vel = 0.7): SeqStep { return makeStep(null, null, true, vel); }
+function NK(note: string, vel = 0.7): SeqStep { return makeStep(note, null, true, vel); }
+
+// Harmonic-index helpers
+function H(harmonic: number, vel = 0.7): SeqStep { return makeStep(null, harmonic, false, vel); }
+function HK(harmonic: number, vel = 0.7): SeqStep { return makeStep(null, harmonic, true, vel); }
+
+// ─── Pre-programmed patterns ───
+
+// Techno pattern — fixed notes
 const PATTERN_TECHNO: Pattern = {
-  name: 'techno',
-  bpm: 132,
+  name: 'techno', arpeggio: false, bpm: 132,
   steps: [
     NK('C2', 1.0), R(),    K(0.5),    N('E4', 0.4),
     NK('C2', 0.7), R(),    NK('G2',0.8), N('D4', 0.4),
@@ -63,10 +89,9 @@ const PATTERN_TECHNO: Pattern = {
   ],
 };
 
-// Ambient pattern
+// Ambient — fixed notes
 const PATTERN_AMBIENT: Pattern = {
-  name: 'ambient',
-  bpm: 86,
+  name: 'ambient', arpeggio: false, bpm: 86,
   steps: [
     N('C3', 0.6), R(),    N('G3', 0.3), R(),
     N('E3', 0.5), R(),    N('B3', 0.3), N('D4', 0.2),
@@ -75,19 +100,46 @@ const PATTERN_AMBIENT: Pattern = {
   ],
 };
 
-// Bass-heavy pattern
-const PATTERN_SUBBASS: Pattern = {
-  name: 'subbass',
-  bpm: 100,
+// Harmonic arpeggio — cycles through overtone series
+const PATTERN_HARMONIC_UP: Pattern = {
+  name: 'harmonic-up', arpeggio: true, bpm: 110,
   steps: [
-    NK('C2', 1.0), R(),    R(),       K(0.4),
-    NK('G1', 0.9), R(),    R(),       K(0.4),
-    NK('A2', 0.8), R(),    N('E3',0.3), K(0.5),
-    NK('F2', 0.7), R(),    N('G3',0.3), K(0.4),
+    HK(1, 1.0), H(2, 0.6), H(3, 0.7), H(4, 0.5),
+    HK(1, 0.9), H(2, 0.5), H(5, 0.8), H(6, 0.4),
+    HK(1, 0.8), H(3, 0.6), H(5, 0.7), H(7, 0.5),
+    HK(1, 0.9), H(2, 0.5), H(4, 0.6), H(8, 0.4),
   ],
 };
 
-const DEFAULT_PATTERNS: Pattern[] = [PATTERN_TECHNO, PATTERN_AMBIENT, PATTERN_SUBBASS];
+// 3rds & 5ths harmonic pattern
+const PATTERN_HARMONIC_INTERVALS: Pattern = {
+  name: 'harmonic-3rds', arpeggio: true, bpm: 96,
+  steps: [
+    H(1, 1.0), H(3, 0.5), H(5, 0.8), H(3, 0.4),
+    H(1, 0.9), H(4, 0.5), H(6, 0.7), H(4, 0.4),
+    H(1, 0.8), H(5, 0.6), H(7, 0.7), H(5, 0.5),
+    H(1, 0.9), H(6, 0.5), H(9, 0.6), H(6, 0.4),
+  ],
+};
+
+// Descending harmonic sweep
+const PATTERN_HARMONIC_SWEEP: Pattern = {
+  name: 'harmonic-sweep', arpeggio: true, bpm: 130,
+  steps: [
+    HK(8, 0.6), H(7, 0.5), H(6, 0.6), H(5, 0.5),
+    HK(4, 0.7), H(3, 0.6), H(2, 0.7), H(1, 0.8),
+    HK(8, 0.6), H(7, 0.5), H(6, 0.6), H(5, 0.5),
+    HK(4, 0.7), H(3, 0.6), H(2, 0.7), H(1, 0.9),
+  ],
+};
+
+const DEFAULT_PATTERNS: Pattern[] = [
+  PATTERN_TECHNO,
+  PATTERN_HARMONIC_UP,
+  PATTERN_HARMONIC_INTERVALS,
+  PATTERN_HARMONIC_SWEEP,
+  PATTERN_AMBIENT,
+];
 
 interface HarmonicStore extends HarmonicState {
   touch: TouchState;
@@ -103,6 +155,7 @@ interface HarmonicStore extends HarmonicState {
   steps: SeqStep[];
   patterns: Pattern[];
   seqTimer: ReturnType<typeof setInterval> | null;
+  arpeggio: boolean; // current mode
 
   setFundamental: (freq: number) => void;
   setOvertoneGain: (index: number, gain: number) => void;
@@ -149,12 +202,11 @@ function advanceSequencer(get: () => HarmonicStore, setFn: (partial: Partial<Har
 
   const step = state.steps[state.currentStep];
   if (step && step.active) {
-    if (step.note) {
-      const freq = NOTE_FREQUENCIES[step.note];
-      if (freq) {
-        applyParams(state);
-        triggerNote(freq, 0.12 + Math.random() * 0.06, state.waveform, step.vel);
-      }
+    // Get frequency — either from harmonic index or fixed note
+    const freq = stepFreq(step, state.fundamental, state.arpeggio);
+    if (freq) {
+      applyParams(state);
+      triggerNote(freq, 0.12 + Math.random() * 0.06, state.waveform, step.vel);
     }
     if (step.perc) {
       triggerNoise(0.04, step.vel * 0.6);
@@ -165,6 +217,10 @@ function advanceSequencer(get: () => HarmonicStore, setFn: (partial: Partial<Har
   setFn({ currentStep: next });
 }
 
+const NOTE_LABELS = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+export { stepFreq, NOTE_FREQUENCIES, NOTE_LABELS };
+
 export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
   ...createDefaultHarmonicState(),
   touch: { x: 0, y: 0, active: false, force: 0.5, count: 0 },
@@ -173,13 +229,14 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
   noteGates: Array(16).fill(true),
 
   // Sequencer state
-  bpm: PATTERN_TECHNO.bpm,
+  bpm: PATTERN_HARMONIC_UP.bpm,
   currentStep: 0,
   isSequencing: false,
-  selectedPatternIdx: 0,
-  steps: [...PATTERN_TECHNO.steps],
+  selectedPatternIdx: 1, // start with harmonic-up
+  steps: [...PATTERN_HARMONIC_UP.steps],
   patterns: DEFAULT_PATTERNS,
   seqTimer: null,
+  arpeggio: PATTERN_HARMONIC_UP.arpeggio,
 
   setFundamental: (freq: number) => {
     set({ fundamental: freq });
@@ -203,25 +260,10 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
     }
   },
 
-  setDetune: (cents: number) => {
-    set({ detune: cents });
-    applyParams(get());
-  },
-
-  setFilter: (freq: number, q: number) => {
-    set({ filterFreq: freq, filterQ: q });
-    applyParams(get());
-  },
-
-  setFilterType: (t: BiquadFilterType) => {
-    set({ filterType: t });
-    applyParams(get());
-  },
-
-  setMasterGain: (gain: number) => {
-    set({ masterGain: gain });
-    applyParams(get());
-  },
+  setDetune: (cents: number) => { set({ detune: cents }); applyParams(get()); },
+  setFilter: (freq: number, q: number) => { set({ filterFreq: freq, filterQ: q }); applyParams(get()); },
+  setFilterType: (t: BiquadFilterType) => { set({ filterType: t }); applyParams(get()); },
+  setMasterGain: (gain: number) => { set({ masterGain: gain }); applyParams(get()); },
 
   togglePlayback: () => {
     const state = get();
@@ -245,60 +287,39 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
 
   trigger: (note: string) => {
     const freq = NOTE_FREQUENCIES[note];
-    if (freq) {
-      const state = get();
-      applyParams(state);
-      triggerNote(freq, 0.3, state.waveform);
-    }
+    if (freq) { const state = get(); applyParams(state); triggerNote(freq, 0.3, state.waveform); }
   },
 
   triggerFreq: (freq: number, vel: number = 0.5) => {
-    const state = get();
-    applyParams(state);
+    const state = get(); applyParams(state);
     triggerNote(freq, 0.15 + Math.random() * 0.2, state.waveform, vel);
   },
 
-  triggerPerc: (vel: number = 0.5) => {
-    applyParams(get());
-    triggerNoise(0.06, vel);
-  },
+  triggerPerc: (vel: number = 0.5) => { applyParams(get()); triggerNoise(0.06, vel); },
 
   randomizeOvertones: () => {
     const newGains = Array.from({ length: 16 }, () => Math.random() * 0.8 + 0.1);
-    set({ overtoneGains: newGains });
-    applyParams(get());
+    set({ overtoneGains: newGains }); applyParams(get());
   },
 
-  resetOvertones: () => {
-    const defaultState = createDefaultHarmonicState();
-    set({ overtoneGains: defaultState.overtoneGains });
-    applyParams(get());
-  },
+  resetOvertones: () => { const d = createDefaultHarmonicState(); set({ overtoneGains: d.overtoneGains }); applyParams(get()); },
 
   setPreset: (preset: string) => {
     const gains = OVERTONE_PRESETS[preset];
-    if (gains) {
-      set({ overtoneGains: gains, selectedPreset: preset });
-      applyParams(get());
-    }
+    if (gains) { set({ overtoneGains: gains, selectedPreset: preset }); applyParams(get()); }
   },
 
-  setReverbMix: (mix: number) => { set({ reverbMix: mix }); applyParams(get()); },
-  setDelayTime: (time: number) => { set({ delayTime: time }); applyParams(get()); },
-  setDelayFeedback: (feedback: number) => { set({ delayFeedback: feedback }); applyParams(get()); },
-  setChorusDepth: (depth: number) => { set({ chorusDepth: depth }); applyParams(get()); },
-  setLfoRate: (rate: number) => { set({ lfoRate: rate }); applyParams(get()); },
+  setReverbMix: (m: number) => { set({ reverbMix: m }); applyParams(get()); },
+  setDelayTime: (t: number) => { set({ delayTime: t }); applyParams(get()); },
+  setDelayFeedback: (f: number) => { set({ delayFeedback: f }); applyParams(get()); },
+  setChorusDepth: (d: number) => { set({ chorusDepth: d }); applyParams(get()); },
+  setLfoRate: (r: number) => { set({ lfoRate: r }); applyParams(get()); },
   setLfoDepth: (d: number) => { set({ lfoDepth: d }); applyParams(get()); },
   setDistortionAmount: (a: number) => { set({ distortionAmount: a }); applyParams(get()); },
   setCompressorThreshold: (t: number) => { set({ compressorThreshold: t }); applyParams(get()); },
   setPan: (p: number) => { set({ pan: p }); applyParams(get()); },
-
-  setTouch: (t: Partial<TouchState>) => {
-    set(state => ({ touch: { ...state.touch, ...t } }));
-  },
-
+  setTouch: (t: Partial<TouchState>) => { set(state => ({ touch: { ...state.touch, ...t } })); },
   setDrawerOpen: (o: boolean) => set({ drawerOpen: o }),
-
   setNoteGate: (index: number, gated: boolean) => {
     const gates = [...get().noteGates];
     gates[index] = gated;
@@ -306,20 +327,20 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
   },
 
   randomizeAll: () => {
-    const state = get();
-    state.setFundamental(40 + Math.random() * 400);
-    state.randomizeOvertones();
-    state.setDetune((Math.random() - 0.5) * 80);
-    state.setFilter(100 + Math.random() * 4000, 0.5 + Math.random() * 10);
-    state.setMasterGain(0.3 + Math.random() * 0.5);
-    state.setReverbMix(Math.random() * 0.6);
-    state.setDelayTime(0.1 + Math.random() * 0.8);
-    state.setDelayFeedback(Math.random() * 0.7);
-    state.setChorusDepth(Math.random() * 0.8);
-    state.setLfoRate(0.1 + Math.random() * 4);
-    state.setLfoDepth(Math.random() * 500);
-    state.setDistortionAmount(Math.random() * 0.5);
-    state.setPan((Math.random() - 0.5) * 2);
+    const s = get();
+    s.setFundamental(40 + Math.random() * 400);
+    s.randomizeOvertones();
+    s.setDetune((Math.random() - 0.5) * 80);
+    s.setFilter(100 + Math.random() * 4000, 0.5 + Math.random() * 10);
+    s.setMasterGain(0.3 + Math.random() * 0.5);
+    s.setReverbMix(Math.random() * 0.6);
+    s.setDelayTime(0.1 + Math.random() * 0.8);
+    s.setDelayFeedback(Math.random() * 0.7);
+    s.setChorusDepth(Math.random() * 0.8);
+    s.setLfoRate(0.1 + Math.random() * 4);
+    s.setLfoDepth(Math.random() * 500);
+    s.setDistortionAmount(Math.random() * 0.5);
+    s.setPan((Math.random() - 0.5) * 2);
   },
 
   // ─── Sequencer ───
@@ -329,7 +350,7 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
     const state = get();
     if (state.isSequencing) {
       if (seqTimer) clearInterval(seqTimer);
-      const interval = (60 / state.bpm / 4) * 1000; // 16th notes
+      const interval = (60 / state.bpm / 4) * 1000;
       seqTimer = setInterval(() => advanceSequencer(get, set), interval);
       set({ seqTimer: seqTimer as any });
     }
@@ -343,6 +364,7 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
         selectedPatternIdx: idx,
         steps: [...pat.steps],
         bpm: pat.bpm,
+        arpeggio: pat.arpeggio,
         currentStep: 0,
       });
     }
@@ -351,12 +373,9 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
   toggleSequencer: () => {
     const state = get();
     if (!state.isSequencing) {
-      // Start drone if not already playing
-      if (!state.isPlaying) {
-        state.togglePlayback();
-      }
+      if (!state.isPlaying) { state.togglePlayback(); }
       set({ currentStep: 0, isSequencing: true });
-      const interval = (60 / state.bpm / 4) * 1000; // 16th notes
+      const interval = (60 / state.bpm / 4) * 1000;
       if (seqTimer) clearInterval(seqTimer);
       seqTimer = setInterval(() => advanceSequencer(get, set), interval);
       set({ seqTimer: seqTimer as any });
@@ -384,13 +403,27 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => ({
   },
 
   randomizeSteps: () => {
-    const notes = ['C2','D2','E2','F2','G2','A2','B2','C3','D3','E3','F3','G3','A3','B3','C4','D4','E4'];
-    const steps = get().steps.map(() => ({
-      note: Math.random() > 0.4 ? notes[Math.floor(Math.random() * notes.length)]! : null,
-      perc: Math.random() > 0.6,
-      vel: 0.3 + Math.random() * 0.7,
-      active: Math.random() > 0.2,
-    }));
+    const { arpeggio } = get();
+    let steps: SeqStep[];
+    if (arpeggio) {
+      // Randomize harmonic indices
+      steps = Array.from({ length: 16 }, () => ({
+        note: null,
+        harmonic: Math.random() > 0.3 ? Math.floor(1 + Math.random() * 12) : null,
+        perc: Math.random() > 0.7,
+        vel: 0.3 + Math.random() * 0.7,
+        active: Math.random() > 0.15,
+      }));
+    } else {
+      const notes = ['C2','D2','E2','F2','G2','A2','B2','C3','D3','E3','F3','G3','A3','B3','C4','D4','E4'];
+      steps = Array.from({ length: 16 }, () => ({
+        note: Math.random() > 0.4 ? notes[Math.floor(Math.random() * notes.length)]! : null,
+        harmonic: null,
+        perc: Math.random() > 0.6,
+        vel: 0.3 + Math.random() * 0.7,
+        active: Math.random() > 0.2,
+      }));
+    }
     set({ steps, currentStep: 0 });
   },
 }));
