@@ -76,26 +76,31 @@ function HK(harmonic: number, vel = 0.7): SeqStep { return makeStep(null, harmon
 //   4 = H(n-1) (step down — leading back)
 // Every note is a harmonic of the root → always consonant with drone
 // ═══════════════════════════════════════════
-function generate1564Pattern(): Pattern {
+function generate1564Pattern(fundamental: number): Pattern {
   const steps: SeqStep[] = [];
 
+  // I-VI-V-IV for each harmonic H1-H8
+  // I = tonic, VI = major 6th, V = perfect 5th, IV = perfect 4th
+  // Frequencies are equal temperament — drone is silenced during sequencing
   for (let hi = 1; hi <= 8; hi++) {
-    const oct = Math.min(hi * 2, 16);
-    const up = Math.min(hi + 2, 16);
-    const down = Math.max(hi - 1, 1);
+    const tonic = fundamental * hi;
+    // Scale degrees above tonic in equal temperament
+    const vi = tonic * Math.pow(2, 9 / 12);  // major 6th
+    const v  = tonic * Math.pow(2, 7 / 12);  // perfect 5th
+    const iv = tonic * Math.pow(2, 5 / 12);  // perfect 4th
 
-    // 1 — tonic (with kick on strong beats)
-    steps.push(H(hi, 0.95));
-    // 5 — leap up the series
-    steps.push(H(up, 0.6));
-    // 6 — octave harmonic
-    steps.push(H(oct, 0.55));
-    // 4 — step back down (with kick every 2nd phrase)
-    steps.push(makeStep(null, down, null, hi % 2 === 0, 0.65));
+    // I — tonic (with kick on strong beats)
+    steps.push(makeStep(null, hi, tonic, hi === 1 || hi === 5, 0.95));
+    // VI — submediant
+    steps.push(makeStep(null, null, vi, false, 0.65));
+    // V — dominant
+    steps.push(makeStep(null, null, v, false, 0.70));
+    // IV — subdominant (with kick on even phrases)
+    steps.push(makeStep(null, null, iv, hi % 2 === 0, 0.60));
   }
 
   return {
-    name: '1564', bpm: 120, arpeggio: true,
+    name: '1564', bpm: 120, arpeggio: false,
     generative: '1564',
     steps,
   };
@@ -148,14 +153,14 @@ const PATTERN_HARMONIC_SWEEP: Pattern = {
   ],
 };
 
-function buildPatterns(): Pattern[] {
+function buildPatterns(fundamental: number = 55): Pattern[] {
   return [
     PATTERN_TECHNO,
     PATTERN_HARMONIC_UP,
     PATTERN_HARMONIC_INTERVALS,
     PATTERN_HARMONIC_SWEEP,
     PATTERN_AMBIENT,
-    generate1564Pattern(),
+    generate1564Pattern(fundamental),
   ];
 }
 
@@ -271,7 +276,7 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => {
       const state = get();
       // Regenerate generative pattern on root change
       if (state.generativeType === '1564' && state.selectedPatternIdx >= 0) {
-        const newSteps = generate1564Pattern().steps;
+        const newSteps = generate1564Pattern(freq).steps;
         set({ steps: newSteps });
       }
       applyParams(state);
@@ -372,7 +377,7 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => {
     },
 
     load1564: () => {
-      const pat = generate1564Pattern();
+      const pat = generate1564Pattern(get().fundamental);
       set(s => ({
         patterns: [...s.patterns, pat],
         selectedPatternIdx: s.patterns.length,
@@ -388,14 +393,16 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => {
       const state = get();
       if (!state.isSequencing) {
         if (!state.isPlaying) state.togglePlayback();
-        // Set quiet drone — just sub bass
+        // Stop drone oscillators — only melody notes play during sequencing
+        stopAllOscillators();
+        // Set mix for clean melody
         set({
           currentStep: 0, isSequencing: true,
-          selectedPreset: 'sub',
-          overtoneGains: [...OVERTONE_PRESETS.sub],
-          masterGain: 0.35,
-          filterFreq: 300,
-          reverbMix: 0.15,
+          masterGain: 0.5,
+          filterFreq: 5000,
+          reverbMix: 0.2,
+          delayFeedback: 0.25,
+          delayTime: 0.2,
           seqDroneReduced: true,
         });
         applyParams(get());
@@ -405,9 +412,11 @@ export const useHarmonicStore = create<HarmonicStore>((set, get) => {
       } else {
         if (seqTimer) { clearInterval(seqTimer); seqTimer = null; }
         set({ isSequencing: false, currentStep: 0, seqTimer: null, seqDroneReduced: false });
-        // Restore normal drone
+        // Restart drone
         const def = createDefaultHarmonicState();
         set({ masterGain: def.masterGain, filterFreq: def.filterFreq, reverbMix: def.reverbMix });
+        createHarmonicOscillators(get());
+        startPlayback();
         applyParams(get());
       }
     },
